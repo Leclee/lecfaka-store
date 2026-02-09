@@ -15,7 +15,7 @@ router = APIRouter()
 async def list_plugins(
     db: AsyncSession = Depends(get_db),
     type: Optional[str] = Query(None, description="插件类型"),
-    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    keyword: Optional[str] = Query(None, description="搜索关键�?),
     category: Optional[str] = Query(None, description="分类: official/third_party/enterprise/free"),
 ):
     """获取商店插件列表"""
@@ -87,3 +87,60 @@ async def get_plugin(plugin_id: str, db: AsyncSession = Depends(get_db)):
         "is_free": p.is_free,
         "channels": p.channels,
     }
+
+
+@router.post("/check-updates")
+async def check_updates(
+    installed: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    批量检查插件更新�?
+    请求�? {"plugins": {"plugin_id": "installed_version", ...}, "app_version": "1.0.0"}
+    响应: 有更新的插件列表 + 最新主程序版本�?    """
+    plugin_versions = installed.get("plugins", {})
+    client_app_version = installed.get("app_version", "0.0.0")
+
+    updates = []
+    if plugin_versions:
+        result = await db.execute(
+            select(StorePlugin).where(
+                StorePlugin.plugin_id.in_(list(plugin_versions.keys())),
+                StorePlugin.status == 1,
+            )
+        )
+        for p in result.scalars().all():
+            local_ver = plugin_versions.get(p.plugin_id, "0.0.0")
+            if _version_gt(p.version, local_ver):
+                updates.append({
+                    "id": p.plugin_id,
+                    "name": p.name,
+                    "current_version": local_ver,
+                    "latest_version": p.version,
+                    "description": p.description,
+                })
+
+    # 主程序最新版本（硬编码或从配置读取）
+    latest_app_version = "1.0.0"
+    app_update = None
+    if _version_gt(latest_app_version, client_app_version):
+        app_update = {
+            "latest_version": latest_app_version,
+            "current_version": client_app_version,
+            "message": f"LecFaka {latest_app_version} 已发布，请更�?,
+        }
+
+    return {
+        "plugin_updates": updates,
+        "app_update": app_update,
+    }
+
+
+def _version_gt(a: str, b: str) -> bool:
+    """比较语义化版�?a > b"""
+    try:
+        pa = [int(x) for x in a.split(".")]
+        pb = [int(x) for x in b.split(".")]
+        return pa > pb
+    except (ValueError, AttributeError):
+        return False

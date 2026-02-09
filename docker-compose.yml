@@ -1,24 +1,44 @@
+# LecFaka Store - 插件商店 & 授权服务�?# 独立部署，所有用户的发卡网远程连接此服务
+#
+# 用法: docker compose up -d
+
 services:
   db:
     image: postgres:18-alpine
+    container_name: lecfaka-store-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: lecfaka
-      POSTGRES_PASSWORD: lecfaka123
+      POSTGRES_USER: ${DB_USER:-lecfaka}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-lecfaka123}
       POSTGRES_DB: lecfaka_store
     volumes:
-      - store_pg_data:/var/lib/postgresql
+      - store_pg_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-lecfaka}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   store:
     build: .
+    container_name: lecfaka-store
+    restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql+asyncpg://lecfaka:lecfaka123@db:5432/lecfaka_store
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-lecfaka}:${DB_PASSWORD:-lecfaka123}@db:5432/lecfaka_store
+      - SECRET_KEY=${SECRET_KEY:-store-secret-change-this}
       - DEBUG=false
     ports:
-      - "8001:8001"
+      - "${HTTP_PORT:-8001}:8001"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   store_pg_data:

@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: lecfaka
+      POSTGRES_PASSWORD: lecfaka123
+      POSTGRES_DB: lecfaka_store
+    volumes:
+      - store_pg_data:/var/lib/postgresql
+    ports:
+      - "5433:5432"
+
+  store:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://lecfaka:lecfaka123@db:5432/lecfaka_store
+      - DEBUG=false
+    ports:
+      - "8001:8001"
+    depends_on:
+      - db
+
+volumes:
+  store_pg_data:

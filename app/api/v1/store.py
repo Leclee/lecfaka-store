@@ -1,4 +1,4 @@
-"""插件商店 API"""
+"""Plugin Store API"""
 
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
@@ -14,11 +14,10 @@ router = APIRouter()
 @router.get("/plugins")
 async def list_plugins(
     db: AsyncSession = Depends(get_db),
-    type: Optional[str] = Query(None, description="插件类型"),
-    keyword: Optional[str] = Query(None, description="搜索关键�?),
-    category: Optional[str] = Query(None, description="分类: official/third_party/enterprise/free"),
+    type: Optional[str] = Query(None, description="Plugin type"),
+    keyword: Optional[str] = Query(None, description="Search keyword"),
+    category: Optional[str] = Query(None, description="Category: official/third_party/enterprise/free"),
 ):
-    """获取商店插件列表"""
     query = select(StorePlugin).where(StorePlugin.status == 1)
 
     if type:
@@ -65,7 +64,6 @@ async def list_plugins(
 
 @router.get("/plugins/{plugin_id}")
 async def get_plugin(plugin_id: str, db: AsyncSession = Depends(get_db)):
-    """获取插件详情"""
     result = await db.execute(
         select(StorePlugin).where(StorePlugin.plugin_id == plugin_id)
     )
@@ -95,9 +93,9 @@ async def check_updates(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    批量检查插件更新�?
-    请求�? {"plugins": {"plugin_id": "installed_version", ...}, "app_version": "1.0.0"}
-    响应: 有更新的插件列表 + 最新主程序版本�?    """
+    Batch check plugin and app updates.
+    Request: {"plugins": {"plugin_id": "version", ...}, "app_version": "1.0.0"}
+    """
     plugin_versions = installed.get("plugins", {})
     client_app_version = installed.get("app_version", "0.0.0")
 
@@ -120,14 +118,13 @@ async def check_updates(
                     "description": p.description,
                 })
 
-    # 主程序最新版本（硬编码或从配置读取）
     latest_app_version = "1.0.0"
     app_update = None
     if _version_gt(latest_app_version, client_app_version):
         app_update = {
             "latest_version": latest_app_version,
             "current_version": client_app_version,
-            "message": f"LecFaka {latest_app_version} 已发布，请更�?,
+            "message": f"LecFaka {latest_app_version} is available",
         }
 
     return {
@@ -137,7 +134,6 @@ async def check_updates(
 
 
 def _version_gt(a: str, b: str) -> bool:
-    """比较语义化版�?a > b"""
     try:
         pa = [int(x) for x in a.split(".")]
         pb = [int(x) for x in b.split(".")]

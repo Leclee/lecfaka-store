@@ -1,4 +1,4 @@
-"""授权验证 API"""
+"""License verification API"""
 
 from datetime import datetime
 from fastapi import APIRouter, Depends
@@ -25,7 +25,6 @@ class BindRequest(BaseModel):
 
 @router.post("/verify")
 async def verify_license(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
-    """验证授权码"""
     result = await db.execute(
         select(License).where(
             License.license_key == req.license_key,
@@ -35,23 +34,21 @@ async def verify_license(req: VerifyRequest, db: AsyncSession = Depends(get_db))
     lic = result.scalar_one_or_none()
 
     if not lic:
-        return {"valid": False, "message": "授权码无效"}
+        return {"valid": False, "message": "Invalid license key"}
 
     if lic.status == 0:
-        return {"valid": False, "message": "授权码已禁用"}
+        return {"valid": False, "message": "License disabled"}
 
     if lic.status == 2:
-        return {"valid": False, "message": "授权码已过期"}
+        return {"valid": False, "message": "License expired"}
 
     if lic.expires_at and lic.expires_at < datetime.utcnow():
         lic.status = 2
-        return {"valid": False, "message": "授权码已过期"}
+        return {"valid": False, "message": "License expired"}
 
-    # 域名检查
     if lic.domain and lic.domain != req.domain:
-        return {"valid": False, "message": f"授权码已绑定到 {lic.domain}"}
+        return {"valid": False, "message": f"License bound to {lic.domain}"}
 
-    # 首次绑定域名
     if not lic.domain:
         lic.domain = req.domain
         lic.activated_at = datetime.utcnow()
@@ -60,24 +57,23 @@ async def verify_license(req: VerifyRequest, db: AsyncSession = Depends(get_db))
         "valid": True,
         "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
         "domain": lic.domain,
-        "message": "授权有效",
+        "message": "License valid",
     }
 
 
 @router.post("/bind")
 async def bind_domain(req: BindRequest, db: AsyncSession = Depends(get_db)):
-    """绑定域名"""
     result = await db.execute(
         select(License).where(License.license_key == req.license_key)
     )
     lic = result.scalar_one_or_none()
 
     if not lic:
-        return {"success": False, "message": "授权码无效"}
+        return {"success": False, "message": "Invalid license key"}
 
     if lic.domain and lic.domain != req.domain:
-        return {"success": False, "message": f"授权码已绑定到 {lic.domain}，无法更换"}
+        return {"success": False, "message": f"License bound to {lic.domain}, cannot change"}
 
     lic.domain = req.domain
     lic.activated_at = datetime.utcnow()
-    return {"success": True, "message": "域名绑定成功"}
+    return {"success": True, "message": "Domain bound successfully"}

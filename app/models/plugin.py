@@ -35,7 +35,15 @@ class StorePlugin(Base):
 
 
 class License(Base):
-    """授权码"""
+    """
+    授权码
+
+    绑定策略：一码一域，最多换绑 max_rebinds 次
+    - 首次激活时自动绑定请求来源的域名
+    - 绑定后只有该域名可以通过验证
+    - 用户可自助换绑域名，每次换绑旧域名立即失效
+    - 换绑次数用完后域名永久锁定
+    """
     __tablename__ = "licenses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -46,3 +54,12 @@ class License(Base):
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    ## 换绑机制
+    rebind_count: Mapped[int] = mapped_column(Integer, default=0)       ## 已换绑次数
+    max_rebinds: Mapped[int] = mapped_column(Integer, default=3)        ## 最大换绑次数
+    rebind_history: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  ## 换绑历史 JSON
+
+    ## 购买信息
+    buyer_email: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  ## 购买者邮箱
+    order_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)     ## 关联订单号

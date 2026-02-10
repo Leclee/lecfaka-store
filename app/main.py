@@ -12,9 +12,8 @@ from .api.v1.license import router as license_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.debug:
-        await init_db()
-        print("[OK] Store database tables created")
+    await init_db()
+    print("[OK] Store database tables ready")
     yield
 
 

@@ -60,13 +60,8 @@ class StorePlugin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    ## 关联
-    purchases: Mapped[list["UserPlugin"]] = relationship(
-        "UserPlugin",
-        back_populates="plugin",
-        primaryjoin="StorePlugin.plugin_id == foreign(UserPlugin.plugin_id)",
-        viewonly=True,
-    )
+    ## 注意：与 UserPlugin 的关联通过 plugin_id 字符串匹配，不是 ForeignKey
+    ## 所有查询使用手动 join: UserPlugin.plugin_id == StorePlugin.plugin_id
 
 
 # ==================== 用户购买的插件 ====================
@@ -93,12 +88,7 @@ class UserPlugin(Base):
 
     ## 关联
     user: Mapped["StoreUser"] = relationship("StoreUser", back_populates="plugins")
-    plugin: Mapped["StorePlugin"] = relationship(
-        "StorePlugin",
-        back_populates="purchases",
-        primaryjoin="UserPlugin.plugin_id == foreign(StorePlugin.plugin_id)",
-        viewonly=True,
-    )
+    ## 注意：与 StorePlugin 的关联通过 plugin_id 字符串匹配，不使用 relationship
 
 
 # ==================== 支付订单 ====================

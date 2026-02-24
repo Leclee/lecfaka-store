@@ -1,28 +1,39 @@
-"""Plugin Store API"""
+"""
+商店 API - 插件列表、详情、购买
 
+购买流程：
+- 免费插件：直接创建 UserPlugin 记录
+- 付费插件：通过支付系统（/api/v1/pay/create-order）完成支付后自动创建
+"""
+
+import json
 import secrets
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database import get_db
-from ...models.plugin import StorePlugin, License
+from ...models.plugin import StorePlugin, StoreUser, UserPlugin
+from ...core.auth import get_current_user, get_optional_user
+from ...core.payment import payment_manager
 
 router = APIRouter()
 
 
-# ==================== 插件列表 ====================
+# ==================== 插件列表（公开） ====================
 
 @router.get("/plugins")
 async def list_plugins(
     db: AsyncSession = Depends(get_db),
-    type: Optional[str] = Query(None, description="Plugin type"),
-    keyword: Optional[str] = Query(None, description="Search keyword"),
-    category: Optional[str] = Query(None, description="Category: official/third_party/enterprise/free"),
+    type: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    user: Optional[StoreUser] = Depends(get_optional_user),
 ):
+    """获取插件列表（公开接口，登录用户会标记已购买状态）"""
     query = select(StorePlugin).where(StorePlugin.status == 1)
 
     if type:
@@ -42,6 +53,20 @@ async def list_plugins(
     result = await db.execute(query)
     plugins = result.scalars().all()
 
+    ## 如果用户已登录，查询已购买的插件
+    purchased_ids = set()
+    if user:
+        up_result = await db.execute(
+            select(UserPlugin.plugin_id).where(
+                UserPlugin.user_id == user.id,
+                UserPlugin.status == 1,
+            )
+        )
+        purchased_ids = {row[0] for row in up_result.all()}
+
+    ## 查询用户总数
+    user_count = await db.scalar(select(func.count(StoreUser.id)))
+
     return {
         "items": [
             {
@@ -49,7 +74,7 @@ async def list_plugins(
                 "name": p.name,
                 "version": p.version,
                 "type": p.type,
-                "author": p.author,
+                "author": p.author_name,
                 "description": p.description,
                 "icon": p.icon,
                 "website": p.website,
@@ -60,65 +85,97 @@ async def list_plugins(
                 "category": p.category,
                 "channels": p.channels,
                 "download_count": p.download_count,
+                "purchase_count": p.purchase_count,
+                "purchased": p.plugin_id in purchased_ids,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             }
             for p in plugins
-        ]
+        ],
+        "payment_available": payment_manager.is_available(),
+        "user_count": user_count or 0,
     }
 
 
+# ==================== 插件详情（公开） ====================
+
 @router.get("/plugins/{plugin_id}")
-async def get_plugin(plugin_id: str, db: AsyncSession = Depends(get_db)):
+async def get_plugin(
+    plugin_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[StoreUser] = Depends(get_optional_user),
+):
+    """获取插件详情"""
     result = await db.execute(
         select(StorePlugin).where(StorePlugin.plugin_id == plugin_id)
     )
     p = result.scalar_one_or_none()
     if not p:
-        return {"error": "Plugin not found"}
+        raise HTTPException(status_code=404, detail="插件不存在")
+
+    ## 查询当前用户是否已购买
+    purchased = False
+    bound_domain = None
+    if user:
+        up_result = await db.execute(
+            select(UserPlugin).where(
+                UserPlugin.user_id == user.id,
+                UserPlugin.plugin_id == plugin_id,
+                UserPlugin.status == 1,
+            )
+        )
+        up = up_result.scalar_one_or_none()
+        if up:
+            purchased = True
+            bound_domain = up.bound_domain
+
+    screenshots = []
+    if p.screenshots:
+        try:
+            screenshots = json.loads(p.screenshots)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     return {
         "id": p.plugin_id,
         "name": p.name,
         "version": p.version,
         "type": p.type,
-        "author": p.author,
+        "author": p.author_name,
         "description": p.description,
+        "detail_html": p.detail_html,
         "icon": p.icon,
+        "screenshots": screenshots,
         "website": p.website,
         "download_url": p.download_url,
         "price": float(p.price),
         "is_free": p.is_free,
+        "is_official": p.is_official,
         "channels": p.channels,
+        "download_count": p.download_count,
+        "purchase_count": p.purchase_count,
+        "purchased": purchased,
+        "bound_domain": bound_domain,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
 
-# ==================== 购买插件 ====================
+# ==================== 购买插件（需登录） ====================
 
 class PurchaseRequest(BaseModel):
-    """购买请求"""
     plugin_id: str
-    buyer_email: str = ""
-    domain: str = ""
-
-
-def _generate_license_key(prefix: str = "LF") -> str:
-    """生成授权码: LF-XXXX-XXXX-XXXX-XXXX"""
-    parts = [secrets.token_hex(2).upper() for _ in range(4)]
-    return f"{prefix}-{'-'.join(parts)}"
 
 
 @router.post("/purchase")
-async def purchase_plugin(req: PurchaseRequest, db: AsyncSession = Depends(get_db)):
+async def purchase_plugin(
+    req: PurchaseRequest,
+    user: StoreUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
-    购买插件并自动生成授权码。
+    购买插件
 
-    流程：
-    1. 验证插件是否存在且已上架
-    2. 生成唯一授权码
-    3. 创建 License 记录
-    4. 返回授权码给调用方
-
-    注：后续可在此处增加支付校验步骤（对接支付回调后才生成）
+    - 免费插件：直接关联到用户账号
+    - 付费插件：返回提示需要通过支付接口
     """
     ## 1. 验证插件
     result = await db.execute(
@@ -129,64 +186,178 @@ async def purchase_plugin(req: PurchaseRequest, db: AsyncSession = Depends(get_d
     )
     plugin = result.scalar_one_or_none()
     if not plugin:
-        return {"success": False, "message": "插件不存在或已下架"}
+        raise HTTPException(status_code=404, detail="插件不存在或已下架")
 
-    ## 2. 生成唯一授权码（确保不重复）
-    for _ in range(10):
-        license_key = _generate_license_key()
-        existing = await db.execute(
-            select(License).where(License.license_key == license_key)
+    ## 2. 检查是否已购买
+    existing = await db.execute(
+        select(UserPlugin).where(
+            UserPlugin.user_id == user.id,
+            UserPlugin.plugin_id == req.plugin_id,
+            UserPlugin.status == 1,
         )
-        if not existing.scalar_one_or_none():
-            break
-    else:
-        return {"success": False, "message": "授权码生成失败，请重试"}
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="您已购买过此插件")
 
-    ## 3. 创建授权记录
+    ## 3. 付费插件 → 走支付流程
+    if not plugin.is_free and float(plugin.price) > 0:
+        if payment_manager.is_available():
+            return {
+                "success": False,
+                "require_payment": True,
+                "message": "请通过支付接口购买此插件",
+                "plugin_id": req.plugin_id,
+                "plugin_name": plugin.name,
+                "price": float(plugin.price),
+                "gateways": payment_manager.list_gateways(),
+            }
+        else:
+            ## 支付未配置时直接购买（仅用于测试）
+            pass
+
+    ## 4. 免费插件 / 未配置支付时 → 直接创建购买记录
     order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
-    lic = License(
+    up = UserPlugin(
+        user_id=user.id,
         plugin_id=req.plugin_id,
-        license_key=license_key,
-        domain=None,
         status=1,
-        expires_at=None,
-        created_at=datetime.utcnow(),
+        bound_domain=None,
         rebind_count=0,
         max_rebinds=3,
-        rebind_history=None,
-        buyer_email=req.buyer_email or None,
         order_no=order_no,
+        purchased_at=datetime.utcnow(),
     )
-    db.add(lic)
+    db.add(up)
 
-    ## 4. 更新下载计数
-    plugin.download_count += 1
+    ## 更新购买计数
+    plugin.purchase_count += 1
 
-    await db.commit()
+    await db.flush()
 
     return {
         "success": True,
-        "message": "购买成功",
-        "license_key": license_key,
+        "message": "获取成功" if plugin.is_free else "购买成功",
         "order_no": order_no,
         "plugin_id": req.plugin_id,
         "plugin_name": plugin.name,
         "price": float(plugin.price),
-        "rebind_limit": 3,
     }
 
 
-# ==================== 更新检查 ====================
+# ==================== 我的插件（需登录） ====================
 
-@router.post("/check-updates")
-async def check_updates(
-    installed: dict,
+@router.get("/my-plugins")
+async def my_plugins(
+    user: StoreUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Batch check plugin and app updates.
-    Request: {"plugins": {"plugin_id": "version", ...}, "app_version": "1.0.0"}
-    """
+    """获取当前用户购买的所有插件"""
+    result = await db.execute(
+        select(UserPlugin, StorePlugin).join(
+            StorePlugin, UserPlugin.plugin_id == StorePlugin.plugin_id
+        ).where(
+            UserPlugin.user_id == user.id,
+        ).order_by(UserPlugin.purchased_at.desc())
+    )
+    rows = result.all()
+
+    return {
+        "items": [
+            {
+                "id": up.plugin_id,
+                "name": sp.name,
+                "version": sp.version,
+                "type": sp.type,
+                "icon": sp.icon,
+                "author": sp.author_name,
+                "price": float(sp.price),
+                "is_free": sp.is_free,
+                "status": up.status,
+                "status_text": {0: "已退款", 1: "已激活", 2: "已过期"}.get(up.status, "未知"),
+                "bound_domain": up.bound_domain,
+                "rebind_count": up.rebind_count,
+                "max_rebinds": up.max_rebinds,
+                "rebind_remaining": up.max_rebinds - up.rebind_count,
+                "order_no": up.order_no,
+                "purchased_at": up.purchased_at.isoformat() if up.purchased_at else None,
+                "expires_at": up.expires_at.isoformat() if up.expires_at else None,
+            }
+            for up, sp in rows
+        ]
+    }
+
+
+# ==================== 域名绑定/换绑（需登录） ====================
+
+class BindDomainRequest(BaseModel):
+    plugin_id: str
+    domain: str
+
+
+class RebindDomainRequest(BaseModel):
+    plugin_id: str
+    new_domain: str
+
+
+@router.post("/bind-domain")
+async def bind_domain(
+    req: BindDomainRequest,
+    user: StoreUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """绑定域名（首次绑定）"""
+    up = await _get_user_plugin(user.id, req.plugin_id, db)
+
+    if up.bound_domain:
+        raise HTTPException(status_code=400, detail=f"已绑定域名 {up.bound_domain}，如需更换请使用换绑功能")
+
+    up.bound_domain = req.domain
+    _append_history(up, "首次绑定", req.domain)
+
+    return {"success": True, "message": f"域名已绑定为 {req.domain}", "domain": req.domain}
+
+
+@router.post("/rebind-domain")
+async def rebind_domain(
+    req: RebindDomainRequest,
+    user: StoreUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """换绑域名"""
+    up = await _get_user_plugin(user.id, req.plugin_id, db)
+
+    if not up.bound_domain:
+        raise HTTPException(status_code=400, detail="尚未绑定域名，请先绑定")
+
+    if req.new_domain == up.bound_domain:
+        raise HTTPException(status_code=400, detail="新域名与当前绑定域名相同")
+
+    if up.rebind_count >= up.max_rebinds:
+        raise HTTPException(
+            status_code=400,
+            detail=f"换绑次数已用完（{up.max_rebinds}/{up.max_rebinds}），请联系客服",
+        )
+
+    old_domain = up.bound_domain
+    up.bound_domain = req.new_domain
+    up.rebind_count += 1
+    _append_history(up, f"换绑 {old_domain} → {req.new_domain}", req.new_domain)
+
+    remaining = up.max_rebinds - up.rebind_count
+    return {
+        "success": True,
+        "message": f"域名已换绑为 {req.new_domain}",
+        "old_domain": old_domain,
+        "new_domain": req.new_domain,
+        "rebind_remaining": remaining,
+    }
+
+
+# ==================== 更新检查（公开） ====================
+
+@router.post("/check-updates")
+async def check_updates(installed: dict, db: AsyncSession = Depends(get_db)):
+    """批量检查插件和主程序更新"""
     plugin_versions = installed.get("plugins", {})
     client_app_version = installed.get("app_version", "0.0.0")
 
@@ -206,7 +377,6 @@ async def check_updates(
                     "name": p.name,
                     "current_version": local_ver,
                     "latest_version": p.version,
-                    "description": p.description,
                 })
 
     latest_app_version = "1.0.0"
@@ -218,16 +388,38 @@ async def check_updates(
             "message": f"LecFaka {latest_app_version} is available",
         }
 
-    return {
-        "plugin_updates": updates,
-        "app_update": app_update,
-    }
+    return {"plugin_updates": updates, "app_update": app_update}
+
+
+# ==================== 辅助函数 ====================
+
+async def _get_user_plugin(user_id: int, plugin_id: str, db: AsyncSession) -> UserPlugin:
+    """获取用户的插件购买记录"""
+    result = await db.execute(
+        select(UserPlugin).where(
+            UserPlugin.user_id == user_id,
+            UserPlugin.plugin_id == plugin_id,
+            UserPlugin.status == 1,
+        )
+    )
+    up = result.scalar_one_or_none()
+    if not up:
+        raise HTTPException(status_code=404, detail="未购买此插件")
+    return up
+
+
+def _append_history(up: UserPlugin, action: str, domain: str):
+    """追加换绑历史"""
+    try:
+        history = json.loads(up.rebind_history) if up.rebind_history else []
+    except (json.JSONDecodeError, TypeError):
+        history = []
+    history.append({"action": action, "domain": domain, "time": datetime.utcnow().isoformat()})
+    up.rebind_history = json.dumps(history, ensure_ascii=False)
 
 
 def _version_gt(a: str, b: str) -> bool:
     try:
-        pa = [int(x) for x in a.split(".")]
-        pb = [int(x) for x in b.split(".")]
-        return pa > pb
+        return [int(x) for x in a.split(".")] > [int(x) for x in b.split(".")]
     except (ValueError, AttributeError):
         return False

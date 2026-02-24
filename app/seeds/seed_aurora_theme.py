@@ -1,91 +1,89 @@
 """
-Aurora Premium 极光主题 - 商店上架种子脚本
+Aurora Premium 极光主题 - 上架种子脚本
+
 运行: python -m app.seeds.seed_aurora_theme
 """
 
 import asyncio
-import json
 from datetime import datetime
 
 from app.database import async_session_maker, init_db
-from app.models.plugin import StorePlugin
+from app.models.plugin import StorePlugin, StoreUser
+from app.core.auth import hash_password
+from sqlalchemy import select
 
 
 async def seed():
-    """插入 Aurora Premium 主题到商店"""
     await init_db()
+    async with async_session_maker() as session:
+        ## 1. 创建超管账号（如果不存在）
+        result = await session.execute(
+            select(StoreUser).where(StoreUser.role == "superadmin")
+        )
+        admin = result.scalar_one_or_none()
+        if not admin:
+            admin = StoreUser(
+                email="admin@leclee.top",
+                username="admin",
+                password_hash=hash_password("admin123456"),
+                role="superadmin",
+                status=1,
+                created_at=datetime.utcnow(),
+            )
+            session.add(admin)
+            await session.flush()
+            print(f"[OK] 超管账号已创建: admin@leclee.top / admin123456")
+        else:
+            print(f"[OK] 超管账号已存在: {admin.email}")
 
-    async with async_session_maker() as db:
-        from sqlalchemy import select
-        result = await db.execute(
+        ## 2. 上架 Aurora Premium 主题
+        result = await session.execute(
             select(StorePlugin).where(StorePlugin.plugin_id == "theme_aurora_premium")
         )
         existing = result.scalar_one_or_none()
-
         if existing:
-            ## 更新已有记录
-            existing.name = "Aurora Premium 极光主题"
-            existing.version = "1.0.0"
-            existing.type = "theme"
-            existing.author = "LecFaka Official"
-            existing.description = (
-                "高端液态玻璃风格主题，融合深色石墨色与金色点缀，支持亮色/暗色双模式切换。"
-                "搭配 Cormorant + Montserrat 字体组合，打造奢华购物体验。\n\n"
-                "✨ 主要特性：\n"
-                "• Liquid Glass 毛玻璃视觉效果\n"
-                "• 亮色/暗色双模式（跟随系统或手动切换）\n"
-                "• 自定义强调色\n"
-                "• Google Fonts 高端字体（可选）\n"
-                "• 全面覆盖前台商城所有页面\n"
-                "• 与 Ant Design 5 深度集成"
-            )
-            existing.icon = "🌌"
-            existing.website = "https://plugins.leclee.top"
-            existing.price = 69
-            existing.is_free = False
-            existing.is_official = True
-            existing.is_enterprise = False
-            existing.category = "theme"
-            existing.status = 1
-            existing.updated_at = datetime.utcnow()
-            print("[✓] Aurora Premium 主题已更新")
+            print(f"[SKIP] Aurora Premium 已上架 (id={existing.id})")
         else:
-            ## 新建记录
             plugin = StorePlugin(
                 plugin_id="theme_aurora_premium",
                 name="Aurora Premium 极光主题",
                 version="1.0.0",
                 type="theme",
-                author="LecFaka Official",
-                description=(
-                    "高端液态玻璃风格主题，融合深色石墨色与金色点缀，支持亮色/暗色双模式切换。"
-                    "搭配 Cormorant + Montserrat 字体组合，打造奢华购物体验。\n\n"
-                    "✨ 主要特性：\n"
-                    "• Liquid Glass 毛玻璃视觉效果\n"
-                    "• 亮色/暗色双模式（跟随系统或手动切换）\n"
-                    "• 自定义强调色\n"
-                    "• Google Fonts 高端字体（可选）\n"
-                    "• 全面覆盖前台商城所有页面\n"
-                    "• 与 Ant Design 5 深度集成"
-                ),
-                icon="🌌",
-                website="https://plugins.leclee.top",
-                download_url=None,
+                author_id=admin.id,
+                author_name="LecFaka Official",
+                description="高级暗黑极光主题 - 渐变极光色彩 × 毛玻璃质感，为你的发卡站带来专业级视觉体验",
+                detail_html="""
+                <h2>Aurora Premium 极光主题</h2>
+                <p>专为 LecFaka 发卡系统打造的高端暗黑主题，采用极光色彩渐变设计。</p>
+                <h3>特色功能</h3>
+                <ul>
+                    <li>极光渐变色彩体系 (Purple → Cyan → Emerald)</li>
+                    <li>毛玻璃 (Glassmorphism) 卡片效果</li>
+                    <li>深度优化的暗黑模式</li>
+                    <li>AntD Token 完美适配</li>
+                    <li>响应式设计，移动端优化</li>
+                </ul>
+                """,
+                icon="/static/plugins/theme_aurora_premium/icon.svg",
+                website="https://plugins.leclee.top/plugin/theme_aurora_premium",
                 price=69,
                 is_free=False,
                 is_official=True,
-                is_enterprise=False,
                 category="theme",
-                channels=None,
                 status=1,
-                download_count=0,
                 created_at=datetime.utcnow(),
             )
-            db.add(plugin)
-            print("[✓] Aurora Premium 主题已上架")
+            session.add(plugin)
+            print("[OK] Aurora Premium 已上架 (¥69)")
 
-        await db.commit()
-    print("[✓] 种子数据写入完成")
+        await session.commit()
+
+    print("\n========================================")
+    print("  种子数据初始化完成!")
+    print("  超管账号: admin@leclee.top")
+    print("  超管密码: admin123456")
+    print("  ⚠️  请登录后立即修改密码 ⚠️")
+    print("========================================")
 
 
 if __name__ == "__main__":

@@ -185,6 +185,16 @@
                             </svg>
                             订单记录
                         </a>
+                        <!-- 作者面板 (author) -->
+                        <div class="sidebar-divider author-only" style="display:none"></div>
+                        <a href="#" class="sidebar-link author-only" data-tab="author-finance"
+                            onclick="switchDashTab(this, 'author-finance')" style="display:none">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                            </svg>
+                            收益与提现
+                        </a>
                         <!-- 管理员面板 (superadmin) -->
                         <div class="sidebar-divider admin-only" style="display:none"></div>
                         <a href="#" class="sidebar-link admin-only" data-tab="admin-stats"
@@ -213,6 +223,14 @@
                                 <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
                             </svg>
                             用户管理
+                        </a>
+                        <a href="#" class="sidebar-link admin-only" data-tab="admin-withdrawals"
+                            onclick="switchDashTab(this, 'admin-withdrawals')" style="display:none">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3" />
+                            </svg>
+                            提现审核
                         </a>
                     </nav>
                 </aside>

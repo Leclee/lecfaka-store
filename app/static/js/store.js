@@ -72,16 +72,23 @@ function updateAuthUI() {
         navDash.style.display = 'block';
         document.getElementById('userName').textContent = currentUser.username;
         document.getElementById('userAvatar').textContent = currentUser.username[0].toUpperCase();
-        // 管理员入口
+        // 管理员与作者入口
         const isAdmin = currentUser.role === 'superadmin';
+        const isAuthor = currentUser.role === 'author' || currentUser.role === 'superadmin';
         document.querySelectorAll('.admin-only').forEach(el => {
             el.style.display = isAdmin ? '' : 'none';
+        });
+        document.querySelectorAll('.author-only').forEach(el => {
+            el.style.display = isAuthor ? '' : 'none';
         });
     } else {
         guest.style.display = 'flex';
         user.style.display = 'none';
         navDash.style.display = 'none';
         document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = 'none';
+        });
+        document.querySelectorAll('.author-only').forEach(el => {
             el.style.display = 'none';
         });
     }
@@ -580,6 +587,8 @@ function switchDashTab(el, tab) {
     if (tab === 'my-plugins') loadMyPlugins(main);
     else if (tab === 'domains') loadDomainManagement(main);
     else if (tab === 'orders') loadOrders(main);
+    else if (tab === 'author-finance') loadAuthorFinance(main);
+    else if (tab === 'admin-withdrawals') loadAdminWithdrawals(main);
     else if (tab === 'admin-stats') loadAdminStats(main);
     else if (tab === 'admin-plugins') loadAdminPlugins(main);
     else if (tab === 'admin-users') loadAdminUsers(main);
@@ -989,5 +998,155 @@ async function toggleUserStatus(userId, newStatus) {
         loadAdminUsers(document.getElementById('dashboardMain'));
     } catch (err) {
         showToast(err.message, 'error');
+    }
+}
+
+// ==================== 收益与提现 ====================
+async function loadAuthorFinance(container) {
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    try {
+        const stats = await apiFetch('/finance/stats');
+        const list = await apiFetch('/finance/withdrawals');
+
+        container.innerHTML = `
+            <h2>收益中心</h2>
+            <div class="stats-grid" style="margin-bottom:20px">
+                <div class="stat-card">
+                    <h3>可提现余额</h3>
+                    <div class="stat-number" style="color:#52c41a">¥${stats.balance.toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>总收入</h3>
+                    <div class="stat-number">¥${stats.total_income.toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>处理中的提现</h3>
+                    <div class="stat-number" style="color:#faad14">¥${stats.pending_withdrawal.toFixed(2)}</div>
+                </div>
+            </div>
+            
+            <div style="margin-bottom:30px; background:var(--color-surface); padding:20px; border-radius:var(--radius-md);">
+                <h3>申请提现</h3>
+                <form id="withdrawForm" onsubmit="handleWithdraw(event)" style="display:flex; gap:10px; align-items:flex-end; margin-top:10px">
+                    <div style="flex:1">
+                        <label style="display:block;margin-bottom:5px;font-size:13px">提现金额 (¥)</label>
+                        <input type="number" id="wAmount" min="1" max="${stats.balance}" step="0.01" style="width:100%;padding:8px" required>
+                    </div>
+                    <div style="flex:1">
+                        <label style="display:block;margin-bottom:5px;font-size:13px">收款方式</label>
+                        <select id="wType" style="width:100%;padding:8px">
+                            <option value="alipay">支付宝</option>
+                            <option value="wxpay">微信</option>
+                            <option value="usdt">USDT</option>
+                        </select>
+                    </div>
+                    <div style="flex:2">
+                        <label style="display:block;margin-bottom:5px;font-size:13px">收款账号</label>
+                        <input type="text" id="wAccount" style="width:100%;padding:8px" required>
+                    </div>
+                    <div>
+                        <button type="submit" class="btn btn-primary" ${stats.balance <= 0 ? 'disabled' : ''}>提交申请</button>
+                    </div>
+                </form>
+            </div>
+
+            <h3>提现记录</h3>
+            ${list.items.length === 0 ? '<div class="empty-state">暂无提现记录</div>' : `
+            <table class="table">
+                <thead><tr><th>时间</th><th>提现金额</th><th>收款信息</th><th>状态</th><th>处理要求</th></tr></thead>
+                <tbody>${list.items.map(i => `
+                    <tr>
+                        <td>${formatDate(i.created_at)}</td>
+                        <td style="font-weight:bold">¥${i.amount}</td>
+                        <td>${i.account_type.toUpperCase()} - ${i.account_no}</td>
+                        <td>
+                            <span class="plugin-tag" style="background:${i.status === 'pending' ? '#fffbe6;color:#faad14' : i.status === 'approved' ? '#f6ffed;color:#52c41a' : '#fff1f0;color:#f5222d'}">
+                                ${i.status}
+                            </span>
+                        </td>
+                        <td>${i.reject_reason || '-'}</td>
+                    </tr>
+                `).join('')}</tbody>
+            </table>`}
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+    }
+}
+
+async function handleWithdraw(e) {
+    e.preventDefault();
+    try {
+        const amount = document.getElementById('wAmount').value;
+        const type = document.getElementById('wType').value;
+        const account = document.getElementById('wAccount').value;
+        await apiFetch('/finance/withdraw', {
+            method: 'POST',
+            body: JSON.stringify({
+                amount: parseFloat(amount),
+                account_type: type,
+                account_no: account
+            })
+        });
+        showToast('提现申请成功！', 'success');
+        loadAuthorFinance(document.getElementById('dashboardMain'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function loadAdminWithdrawals(container) {
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    try {
+        const data = await apiFetch('/finance/admin/withdrawals');
+        container.innerHTML = `
+            <h2>提现审核</h2>
+            ${data.items.length === 0 ? '<div class="empty-state">目前没有记录</div>' : `
+            <table class="table">
+                <thead><tr><th>用户</th><th>时间</th><th>金额</th><th>打款信息</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody>${data.items.map(i => `
+                    <tr>
+                        <td>${i.username}</td>
+                        <td style="font-size:12px">${formatDate(i.created_at)}</td>
+                        <td style="color:#d9363e;font-weight:bold">¥${i.amount}</td>
+                        <td>${i.account_type} - ${i.account_no}</td>
+                        <td>
+                            <span class="plugin-tag" style="background:${i.status === 'pending' ? '#fffbe6;color:#faad14' : i.status === 'approved' ? '#f6ffed;color:#52c41a' : '#fff1f0;color:#f5222d'}">
+                                ${i.status}
+                            </span>
+                            ${i.reject_reason ? `<br><small style="color:red">${i.reject_reason}</small>` : ''}
+                        </td>
+                        <td>
+                            ${i.status === 'pending' ? `
+                                <button class="btn btn-primary btn-sm" onclick="processWithdraw(${i.id}, 'approve')">通过/已打款</button>
+                                <button class="btn btn-danger btn-sm" onclick="processWithdraw(${i.id}, 'reject')">拒绝</button>
+                            ` : '-'}
+                        </td>
+                    </tr>
+                `).join('')}</tbody>
+            </table>`}
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+    }
+}
+
+async function processWithdraw(id, action) {
+    let reason = null;
+    if (action === 'reject') {
+        reason = prompt('请输入拒绝原因（资金将退回作者余额）：');
+        if (reason === null) return;
+    } else {
+        if (!confirm('请确认您已经向作者打款完毕？点击确定将标记为已完成。')) return;
+    }
+    try {
+        await apiFetch(`/finance/admin/withdrawals/${id}/process`, {
+            method: 'POST',
+            body: JSON.stringify({ action, reason })
+        });
+        showToast('处理成功', 'success');
+        loadAdminWithdrawals(document.getElementById('dashboardMain'));
+    } catch (err) {
+        showToast('处理失败: ' + err.message, 'error');
     }
 }

@@ -256,13 +256,22 @@ async def payment_notify(
         )
         db.add(up)
 
-        ## 更新插件购买计数
+        ## 更新插件购买计数并增加作者收益
         plugin_result = await db.execute(
             select(StorePlugin).where(StorePlugin.plugin_id == order.plugin_id)
         )
         plugin = plugin_result.scalar_one_or_none()
         if plugin:
             plugin.purchase_count += 1
+            if plugin.author_id:
+                author_result = await db.execute(
+                    select(StoreUser).where(StoreUser.id == plugin.author_id)
+                )
+                author = author_result.scalar_one_or_none()
+                if author:
+                    amount = order.actual_amount or order.amount
+                    author.balance = (author.balance or 0) + float(amount)
+                    author.total_income = (author.total_income or 0) + float(amount)
 
     await db.flush()
     logger.info(f"支付成功: order_no={order_no}, trade_no={notify_result.trade_no}")

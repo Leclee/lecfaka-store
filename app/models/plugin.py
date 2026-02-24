@@ -24,9 +24,37 @@ class StoreUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    ## 财务统计
+    balance: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    total_income: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+
     ## 关联
     plugins: Mapped[list["UserPlugin"]] = relationship("UserPlugin", back_populates="user")
     orders: Mapped[list["PaymentOrder"]] = relationship("PaymentOrder", back_populates="user")
+    withdrawals: Mapped[list["WithdrawalRecord"]] = relationship("WithdrawalRecord", back_populates="user")
+
+
+# ==================== 提现记录 ====================
+
+class WithdrawalRecord(Base):
+    """插件作者提现记录"""
+    __tablename__ = "withdrawal_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_users.id"), nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  ## pending/approved/rejected
+    account_type: Mapped[str] = mapped_column(String(20), nullable=False)  ## alipay/wxpay/bank/usdt
+    account_no: Mapped[str] = mapped_column(String(100), nullable=False)
+    account_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reject_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    ## 关联
+    user: Mapped["StoreUser"] = relationship("StoreUser", back_populates="withdrawals")
+
 
 
 # ==================== 插件 ====================

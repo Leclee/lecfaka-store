@@ -23,7 +23,7 @@ from ...core.auth import get_current_user, require_role
 router = APIRouter()
 
 ## 插件包上传目录
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "plugins")
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "uploads", "plugins")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 

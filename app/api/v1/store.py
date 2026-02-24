@@ -6,11 +6,13 @@
 - 付费插件：通过支付系统（/api/v1/pay/create-order）完成支付后自动创建
 """
 
+import os
 import json
 import secrets
 from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,6 +155,53 @@ async def get_plugin(
         "bound_domain": bound_domain,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
+
+
+@router.get("/download/{plugin_id}")
+async def download_plugin(
+    plugin_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[StoreUser] = Depends(get_optional_user),
+):
+    """下载插件包"""
+    result = await db.execute(
+        select(StorePlugin).where(StorePlugin.plugin_id == plugin_id)
+    )
+    p = result.scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="插件不存在")
+
+    ## 如果不是免费插件，需要验证是否购买
+    if not p.is_free:
+        if not user:
+            raise HTTPException(status_code=401, detail="请登录后下载付费插件")
+        
+        up_result = await db.execute(
+            select(UserPlugin).where(
+                UserPlugin.user_id == user.id,
+                UserPlugin.plugin_id == plugin_id,
+                UserPlugin.status == 1,
+            )
+        )
+        if not up_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="尚未购买该插件，无法下载")
+
+    ## 记录下载次数
+    p.download_count = (p.download_count or 0) + 1
+    await db.commit()
+
+    if p.download_url and p.download_url.startswith("/uploads/"):
+        ## 构造服务器本地路径
+        file_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "uploads",
+            p.download_url.replace("/uploads/", "")
+        )
+        
+        if os.path.exists(file_path):
+            return FileResponse(file_path, filename=os.path.basename(file_path))
+            
+    raise HTTPException(status_code=404, detail="插件包文件不存在，请联系管理员")
 
 
 # ==================== 购买插件（需登录） ====================

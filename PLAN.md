@@ -12,11 +12,11 @@
 
 ## 🔨 实施计划
 
-### Phase 1: 快速修复 — 移除统计数字
-- [x] 移除 `index.html` 中 `.hero-stats` 区域
-- [x] 移除 `store.js` 中 `animateNumber` 相关调用
+###- [x] Phase 1: Store Admin Console - Initial view
+- [x] Phase 2: Plugin Lifecycle APIs - (Upload, Buy, etc)
+- [x] Phase 3: Multi-Theme Architecture - Complete
+- [x] Phase 4: Online Installation - Complete
 
-### Phase 2: Store 管理控制台页面
 管理员（superadmin）登录后可在控制台看到额外的管理选项：
 
 #### 2.1 管理控制台界面 (index.html + store.js)

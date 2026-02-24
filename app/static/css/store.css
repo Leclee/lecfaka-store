@@ -1176,3 +1176,36 @@ img {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--color-border-hover)
 }
+
+/* ---- Admin Panel ---- */
+.sidebar-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 12px 0;
+}
+
+.stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    text-align: center;
+    transition: border-color .2s, transform .2s;
+}
+
+.stat-card:hover {
+    border-color: var(--color-primary);
+    transform: translateY(-2px);
+}
+
+.stat-card-num {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-bottom: 6px;
+}
+
+.stat-card-label {
+    font-size: 13px;
+    color: var(--color-text-muted);
+}

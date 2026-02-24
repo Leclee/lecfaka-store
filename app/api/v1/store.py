@@ -64,9 +64,6 @@ async def list_plugins(
         )
         purchased_ids = {row[0] for row in up_result.all()}
 
-    ## 查询用户总数
-    user_count = await db.scalar(select(func.count(StoreUser.id)))
-
     return {
         "items": [
             {
@@ -92,7 +89,6 @@ async def list_plugins(
             for p in plugins
         ],
         "payment_available": payment_manager.is_available(),
-        "user_count": user_count or 0,
     }
 
 

@@ -86,6 +86,11 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+## 插件上传文件目录（供下载用）
+uploads_dir = Path(__file__).parent.parent / "uploads"
+uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
 
 @app.get("/health")
 async def health():
@@ -113,7 +118,7 @@ async def serve_index():
 async def serve_spa(path: str, request: Request):
     """SPA 兜底路由 - 所有非 API、非静态文件的路径都返回 index.html"""
     ## 排除 API 路径
-    if path.startswith("api/") or path.startswith("static/"):
+    if path.startswith("api/") or path.startswith("static/") or path.startswith("uploads/"):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
 

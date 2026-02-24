@@ -72,10 +72,18 @@ function updateAuthUI() {
         navDash.style.display = 'block';
         document.getElementById('userName').textContent = currentUser.username;
         document.getElementById('userAvatar').textContent = currentUser.username[0].toUpperCase();
+        // 管理员入口
+        const isAdmin = currentUser.role === 'superadmin';
+        document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = isAdmin ? '' : 'none';
+        });
     } else {
         guest.style.display = 'flex';
         user.style.display = 'none';
         navDash.style.display = 'none';
+        document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = 'none';
+        });
     }
 }
 
@@ -215,12 +223,6 @@ async function loadPlugins() {
 
         const data = await apiFetch(`/store/plugins?${params.toString()}`);
         pluginsData = data.items || [];
-
-        // 更新统计数字
-        const total = pluginsData.length;
-        animateNumber('statPlugins', total);
-        animateNumber('statUsers', data.user_count || 0);
-        animateNumber('statDownloads', pluginsData.reduce((s, p) => s + (p.download_count || 0), 0));
     } catch (err) {
         console.error('加载插件失败:', err);
         pluginsData = [];
@@ -578,6 +580,9 @@ function switchDashTab(el, tab) {
     if (tab === 'my-plugins') loadMyPlugins(main);
     else if (tab === 'domains') loadDomainManagement(main);
     else if (tab === 'orders') loadOrders(main);
+    else if (tab === 'admin-stats') loadAdminStats(main);
+    else if (tab === 'admin-plugins') loadAdminPlugins(main);
+    else if (tab === 'admin-users') loadAdminUsers(main);
 }
 
 async function loadMyPlugins(container) {
@@ -738,19 +743,251 @@ function showToast(message, type = 'info') {
 // ==================== 工具函数 ====================
 function animateNumber(id, target) {
     const el = document.getElementById(id);
-    if (!el || target === 0) {
-        if (el) el.textContent = target;
+    if (!el) return;
+    el.textContent = target;
+}
+
+// ==================== 管理员面板 ====================
+
+/** 数据概览 */
+async function loadAdminStats(container) {
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    try {
+        const data = await apiFetch('/admin/stats');
+        container.innerHTML = `
+            <h3 style="margin-bottom:24px;font-size:18px">📊 数据概览</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:32px">
+                <div class="stat-card">
+                    <div class="stat-card-num">${data.total_users || 0}</div>
+                    <div class="stat-card-label">注册用户</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-num">${data.total_plugins || 0}</div>
+                    <div class="stat-card-label">插件总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-num">${data.total_orders || 0}</div>
+                    <div class="stat-card-label">订单总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-num">¥${data.total_revenue || 0}</div>
+                    <div class="stat-card-label">累计收入</div>
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+    }
+}
+
+/** 插件管理 */
+async function loadAdminPlugins(container) {
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    try {
+        const data = await apiFetch('/store/plugins');
+        const plugins = data.items || [];
+
+        container.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                <h3 style="font-size:18px;margin:0">📦 插件管理 (${plugins.length})</h3>
+                <button class="btn btn-primary btn-sm" onclick="showAddPluginForm()">➕ 发布插件</button>
+            </div>
+            <div id="addPluginArea" style="display:none;margin-bottom:24px"></div>
+            ${plugins.length === 0 ? '<div class="empty-state"><p>还没有插件，点击上方按钮发布第一个插件</p></div>' : `
+            <table class="dash-table">
+                <thead><tr><th>插件</th><th>类型</th><th>版本</th><th>价格</th><th>状态</th><th>购买数</th><th>操作</th></tr></thead>
+                <tbody>${plugins.map(p => `
+                    <tr>
+                        <td><strong>${p.name}</strong><br><span style="font-size:12px;color:var(--color-text-muted)">${p.id}</span></td>
+                        <td><span class="plugin-tag tag-${p.type}">${p.type}</span></td>
+                        <td>v${p.version}</td>
+                        <td>${p.is_free ? '<span style="color:#52c41a">免费</span>' : '<span style="color:#ff4d4f">¥' + p.price + '</span>'}</td>
+                        <td><span class="plugin-tag ${p.status !== undefined && p.status !== 1 ? '' : 'tag-purchased'}">${p.status === 1 || p.status === undefined ? '已上架' : '未上架'}</span></td>
+                        <td>${p.purchase_count || 0}</td>
+                        <td>
+                            <button class="btn btn-outline btn-sm" onclick="editPlugin('${p.id}')">编辑</button>
+                        </td>
+                    </tr>
+                `).join('')}</tbody>
+            </table>`}
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+    }
+}
+
+/** 显示添加插件表单 */
+function showAddPluginForm() {
+    const area = document.getElementById('addPluginArea');
+    if (area.style.display === 'block') {
+        area.style.display = 'none';
         return;
     }
-    const duration = 800;
-    const start = performance.now();
-    const from = parseInt(el.textContent) || 0;
-    function update(now) {
-        const elapsed = now - start;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-        el.textContent = Math.round(from + (target - from) * eased);
-        if (progress < 1) requestAnimationFrame(update);
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:24px">
+            <h4 style="margin-bottom:16px">发布新插件</h4>
+            <form id="addPluginForm" onsubmit="submitNewPlugin(event)">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <div class="form-group">
+                        <label>插件 ID *</label>
+                        <input type="text" id="np_id" placeholder="例如: theme_aurora" required style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>插件名称 *</label>
+                        <input type="text" id="np_name" placeholder="例如: Aurora 极光主题" required style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>类型 *</label>
+                        <select id="np_type" required style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                            <option value="theme">主题模板</option>
+                            <option value="payment">支付接口</option>
+                            <option value="extension">功能扩展</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>版本 *</label>
+                        <input type="text" id="np_version" value="1.0.0" required style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>价格 (¥)</label>
+                        <input type="number" id="np_price" value="0" min="0" step="0.01" style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>作者</label>
+                        <input type="text" id="np_author" value="LecFaka Official" style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>简介</label>
+                    <input type="text" id="np_desc" placeholder="一句话描述插件功能" style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>官网 URL</label>
+                    <input type="url" id="np_website" placeholder="https://" style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>详细描述 (HTML)</label>
+                    <textarea id="np_detail" rows="4" placeholder="支持 HTML 格式" style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px;resize:vertical"></textarea>
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>插件下载包 (ZIP)</label>
+                    <input type="file" id="np_file" accept=".zip" style="padding:10px 0;color:var(--color-text);font-size:14px">
+                </div>
+                <div style="display:flex;gap:12px;margin-top:20px">
+                    <button type="submit" class="btn btn-primary" id="npSubmitBtn">发布插件</button>
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('addPluginArea').style.display='none'">取消</button>
+                </div>
+            </form>
+        </div>
+    `;
+}
+
+/** 提交新插件 */
+async function submitNewPlugin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('npSubmitBtn');
+    btn.textContent = '发布中...';
+    btn.disabled = true;
+
+    try {
+        const price = parseFloat(document.getElementById('np_price').value) || 0;
+        const body = {
+            plugin_id: document.getElementById('np_id').value.trim(),
+            name: document.getElementById('np_name').value.trim(),
+            type: document.getElementById('np_type').value,
+            version: document.getElementById('np_version').value.trim(),
+            price: price,
+            is_free: price === 0,
+            author_name: document.getElementById('np_author').value.trim(),
+            description: document.getElementById('np_desc').value.trim(),
+            website: document.getElementById('np_website').value.trim(),
+            detail_html: document.getElementById('np_detail').value.trim(),
+        };
+
+        // 如果有文件，用 FormData
+        const fileInput = document.getElementById('np_file');
+        if (fileInput.files.length > 0) {
+            const fd = new FormData();
+            fd.append('file', fileInput.files[0]);
+            fd.append('meta', JSON.stringify(body));
+            const res = await fetch(`${API_BASE}/admin/plugins/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: fd,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || '上传失败');
+            showToast('插件发布成功！', 'success');
+        } else {
+            await apiFetch('/admin/plugins', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+            showToast('插件信息已保存！', 'success');
+        }
+
+        document.getElementById('addPluginArea').style.display = 'none';
+        loadAdminPlugins(document.getElementById('dashboardMain'));
+        await loadPlugins();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.textContent = '发布插件';
+        btn.disabled = false;
     }
-    requestAnimationFrame(update);
+}
+
+/** 编辑插件(简化版) */
+function editPlugin(pluginId) {
+    showToast('编辑功能开发中...', 'info');
+}
+
+/** 用户管理 */
+async function loadAdminUsers(container) {
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    try {
+        const data = await apiFetch('/admin/users');
+        const users = data.items || [];
+
+        container.innerHTML = `
+            <h3 style="margin-bottom:24px;font-size:18px">👥 用户管理 (${users.length})</h3>
+            ${users.length === 0 ? '<div class="empty-state"><p>暂无用户</p></div>' : `
+            <table class="dash-table">
+                <thead><tr><th>ID</th><th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th></tr></thead>
+                <tbody>${users.map(u => `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td><strong>${u.username}</strong></td>
+                        <td>${u.email}</td>
+                        <td><span class="plugin-tag ${u.role === 'superadmin' ? 'tag-purchased' : ''}">${u.role}</span></td>
+                        <td>${u.status === 1 ? '<span style="color:#52c41a">正常</span>' : '<span style="color:#ff4d4f">禁用</span>'}</td>
+                        <td style="font-size:13px;color:var(--color-text-secondary)">${u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}</td>
+                        <td>
+                            ${u.role !== 'superadmin' ? `
+                                <button class="btn btn-outline btn-sm" onclick="toggleUserStatus(${u.id}, ${u.status === 1 ? 0 : 1})">
+                                    ${u.status === 1 ? '禁用' : '启用'}
+                                </button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `).join('')}</tbody>
+            </table>`}
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+    }
+}
+
+async function toggleUserStatus(userId, newStatus) {
+    try {
+        await apiFetch(`/admin/users/${userId}/status`, {
+            method: 'PUT',
+            body: JSON.stringify({ status: newStatus }),
+        });
+        showToast('用户状态已更新', 'success');
+        loadAdminUsers(document.getElementById('dashboardMain'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
 }

@@ -190,18 +190,57 @@ async def download_plugin(
     p.download_count = (p.download_count or 0) + 1
     await db.commit()
 
-    if p.download_url and p.download_url.startswith("/uploads/"):
-        ## 构造服务器本地路径
-        file_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "uploads",
-            p.download_url.replace("/uploads/", "")
-        )
-        
-        if os.path.exists(file_path):
-            return FileResponse(file_path, filename=os.path.basename(file_path))
-            
-    raise HTTPException(status_code=404, detail="插件包文件不存在，请联系管理员")
+    import logging
+    logger = logging.getLogger("lecfaka_store")
+
+    ## 项目根目录（/app）
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    uploads_root = os.path.join(project_root, "uploads")
+
+    logger.info(f"[download] plugin_id={plugin_id}, download_url={p.download_url}, project_root={project_root}, uploads_root={uploads_root}")
+
+    ## 尝试从 download_url 字段解析文件路径
+    candidate_paths = []
+
+    if p.download_url:
+        url = p.download_url
+
+        ## 格式1: /uploads/plugins/xxx/xxx.zip
+        if url.startswith("/uploads/"):
+            rel = url.replace("/uploads/", "", 1)
+            candidate_paths.append(os.path.join(uploads_root, rel))
+
+        ## 格式2: plugins/xxx/xxx.zip（相对于 uploads）
+        elif not url.startswith("/") and not url.startswith("http"):
+            candidate_paths.append(os.path.join(uploads_root, url))
+
+        ## 格式3: 绝对路径
+        elif os.path.isabs(url):
+            candidate_paths.append(url)
+
+    ## 兜底：在 uploads/plugins/{plugin_id}/ 目录下找 zip 文件
+    fallback_dir = os.path.join(uploads_root, "plugins", plugin_id)
+    if os.path.isdir(fallback_dir):
+        for f in os.listdir(fallback_dir):
+            if f.endswith(".zip"):
+                candidate_paths.append(os.path.join(fallback_dir, f))
+
+    logger.info(f"[download] candidate_paths={candidate_paths}")
+
+    for path in candidate_paths:
+        if os.path.exists(path):
+            logger.info(f"[download] Found file: {path}")
+            return FileResponse(path, filename=os.path.basename(path))
+
+    ## 列出 uploads 目录结构以便调试
+    debug_info = []
+    if os.path.isdir(uploads_root):
+        for root, dirs, files in os.walk(uploads_root):
+            for f in files:
+                debug_info.append(os.path.join(root, f))
+    logger.error(f"[download] File NOT found. uploads contents: {debug_info}")
+
+    raise HTTPException(status_code=404, detail=f"插件包文件不存在，请联系管理员 (download_url={p.download_url}, candidates={candidate_paths})")
 
 
 # ==================== 购买插件（需登录） ====================

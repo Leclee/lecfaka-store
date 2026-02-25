@@ -14,7 +14,7 @@
 import json
 import secrets
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import PlainTextResponse
@@ -96,7 +96,7 @@ async def create_order(
         raise HTTPException(status_code=400, detail="您已购买过此插件")
 
     ## 3. 检查是否有待支付的同插件订单（5分钟内有效）
-    recent_cutoff = datetime.utcnow() - timedelta(minutes=5)
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
     existing_order = await db.execute(
         select(PaymentOrder).where(
             PaymentOrder.user_id == user.id,
@@ -122,7 +122,7 @@ async def create_order(
         raise HTTPException(status_code=400, detail=f"不支持的支付方式: {req.gateway}")
 
     ## 5. 生成订单号
-    order_no = f"LS-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}"
+    order_no = f"LS-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}"
     amount = float(plugin.price)
 
     ## 6. 构建回调 URL
@@ -155,8 +155,8 @@ async def create_order(
         status="pending",
         subject=f"购买插件: {plugin.name}",
         payment_url=pay_result.payment_url,
-        created_at=datetime.utcnow(),
-        expired_at=datetime.utcnow() + timedelta(minutes=settings.payment_expire_minutes),
+        created_at=datetime.now(timezone.utc),
+        expired_at=datetime.now(timezone.utc) + timedelta(minutes=settings.payment_expire_minutes),
     )
     db.add(order)
     await db.flush()
@@ -219,16 +219,16 @@ async def payment_notify(
 
     order_no = notify_result.order_no
 
-    ## 查找订单
+    ## 查找订单（加行锁防止并发重复处理）
     result = await db.execute(
-        select(PaymentOrder).where(PaymentOrder.order_no == order_no)
+        select(PaymentOrder).where(PaymentOrder.order_no == order_no).with_for_update()
     )
     order = result.scalar_one_or_none()
     if not order:
         logger.error(f"回调订单不存在: {order_no}")
         return PlainTextResponse("fail")
 
-    ## 防止重复处理
+    ## 防止重复处理（配合 FOR UPDATE，保证幂等）
     if order.status == "paid":
         logger.info(f"订单已处理过: {order_no}")
         return PlainTextResponse("success")
@@ -242,7 +242,7 @@ async def payment_notify(
     order.status = "paid"
     order.trade_no = notify_result.trade_no
     order.actual_amount = notify_result.amount if notify_result.amount > 0 else order.amount
-    order.paid_at = datetime.utcnow()
+    order.paid_at = datetime.now(timezone.utc)
     order.notify_data = json.dumps(notify_result.raw, ensure_ascii=False)
 
     ## 创建 UserPlugin（用户获得插件）
@@ -262,7 +262,7 @@ async def payment_notify(
             rebind_count=0,
             max_rebinds=3,
             order_no=order_no,
-            purchased_at=datetime.utcnow(),
+            purchased_at=datetime.now(timezone.utc),
         )
         db.add(up)
 
@@ -320,7 +320,7 @@ async def get_order_status(
         raise HTTPException(status_code=404, detail="订单不存在")
 
     ## 如果订单还是 pending 且已过期，标记为 expired
-    if order.status == "pending" and order.expired_at and order.expired_at < datetime.utcnow():
+    if order.status == "pending" and order.expired_at and order.expired_at < datetime.now(timezone.utc):
         order.status = "expired"
         await db.flush()
 

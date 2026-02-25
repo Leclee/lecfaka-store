@@ -2,7 +2,7 @@
 认证工具：JWT + 密码哈希
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -34,7 +34,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(user_id: int, role: str, expires_delta: Optional[timedelta] = None) -> str:
     """创建 JWT access token"""
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
     payload = {
         "sub": str(user_id),
         "role": role,
@@ -46,7 +46,7 @@ def create_access_token(user_id: int, role: str, expires_delta: Optional[timedel
 
 def create_refresh_token(user_id: int) -> str:
     """创建 JWT refresh token"""
-    expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_token_expire_days)
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days)
     payload = {
         "sub": str(user_id),
         "exp": expire,

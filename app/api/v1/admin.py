@@ -6,7 +6,7 @@
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -301,7 +301,7 @@ async def upload_plugin(
         plugin.download_url = download_url
         plugin.price = price
         plugin.is_free = is_free
-        plugin.updated_at = datetime.utcnow()
+        plugin.updated_at = datetime.now(timezone.utc)
         msg = f"插件 '{plugin.name}' 已更新"
     else:
         ## 创建
@@ -348,7 +348,7 @@ async def update_plugin_status(
         raise HTTPException(status_code=404, detail="插件不存在")
 
     plugin.status = req.status
-    plugin.updated_at = datetime.utcnow()
+    plugin.updated_at = datetime.now(timezone.utc)
 
     status_text = {0: "下架", 1: "上架", 2: "审核中"}.get(req.status, "未知")
     return {"message": f"插件 {plugin.name} 已{status_text}"}

@@ -4,7 +4,7 @@
 验证逻辑：域名 + plugin_id → 查找是否有用户购买了该插件并绑定了该域名
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -49,7 +49,7 @@ async def verify_domain(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
         return {"valid": False, "error": "未找到授权或域名未绑定"}
 
     ## 检查是否过期
-    if up.expires_at and up.expires_at < datetime.utcnow():
+    if up.expires_at and up.expires_at < datetime.now(timezone.utc):
         return {"valid": False, "error": "授权已过期"}
 
     return {
@@ -83,12 +83,13 @@ async def verify_by_user(req: VerifyByUserRequest, db: AsyncSession = Depends(ge
         return {"valid": False, "error": "用户未购买此插件"}
 
     ## 检查过期
-    if up.expires_at and up.expires_at < datetime.utcnow():
+    if up.expires_at and up.expires_at < datetime.now(timezone.utc):
         return {"valid": False, "error": "授权已过期"}
 
-    ## 自动绑定域名（首次访问时，由 get_db 依赖自动 commit）
+    ## 自动绑定域名（首次访问时）
     if not up.bound_domain:
         up.bound_domain = req.domain
+        await db.flush()  ## 立即持久化绑定，防止后续异常导致丢失
 
     ## 域名不匹配
     if up.bound_domain != req.domain:

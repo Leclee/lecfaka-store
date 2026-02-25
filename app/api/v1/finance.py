@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from decimal import Decimal
 
@@ -70,7 +70,7 @@ async def request_withdraw(
         account_type=req.account_type,
         account_no=req.account_no,
         account_name=req.account_name,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     db.add(record)
     await db.commit()
@@ -172,11 +172,11 @@ async def admin_process_withdrawal(
         
     if req.action == "approve":
         record.status = "approved"
-        record.processed_at = datetime.utcnow()
+        record.processed_at = datetime.now(timezone.utc)
     elif req.action == "reject":
         record.status = "rejected"
         record.reject_reason = req.reason
-        record.processed_at = datetime.utcnow()
+        record.processed_at = datetime.now(timezone.utc)
         # 退还余额
         user_result = await db.execute(select(StoreUser).where(StoreUser.id == record.user_id))
         user = user_result.scalar_one_or_none()

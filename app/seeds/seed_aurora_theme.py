@@ -5,7 +5,7 @@ Aurora Premium 极光主题 - 上架种子脚本
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import async_session_maker, init_db
 from app.models.plugin import StorePlugin, StoreUser
@@ -28,7 +28,7 @@ async def seed():
                 password_hash=hash_password("admin123456"),
                 role="superadmin",
                 status=1,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             session.add(admin)
             await session.flush()
@@ -71,7 +71,7 @@ async def seed():
                 is_official=True,
                 category="theme",
                 status=1,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             session.add(plugin)
             print("[OK] Aurora Premium 已上架 (¥69)")

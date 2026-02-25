@@ -1,6 +1,6 @@
 """认证 API：注册、登录、用户信息"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, or_
@@ -70,7 +70,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         password_hash=hash_password(req.password),
         role="user",
         status=1,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(user)
     await db.flush()  ## 获取 user.id
@@ -105,7 +105,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=403, detail="账号已被禁用")
 
     ## 更新最后登录时间
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = datetime.now(timezone.utc)
 
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)

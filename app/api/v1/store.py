@@ -10,7 +10,7 @@ import os
 import json
 import secrets
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -92,6 +92,8 @@ async def list_plugins(
                 "purchase_count": p.purchase_count,
                 "purchased": p.plugin_id in purchased_ids,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
+                ## 管理员可见字段
+                **({"status": p.status} if user and user.role == "superadmin" else {}),
             }
             for p in plugins
         ],
@@ -305,7 +307,7 @@ async def purchase_plugin(
             pass
 
     ## 4. 免费插件 / 未配置支付时 → 直接创建购买记录
-    order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+    order_no = f"ORD-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
     up = UserPlugin(
         user_id=user.id,
         plugin_id=req.plugin_id,
@@ -314,7 +316,7 @@ async def purchase_plugin(
         rebind_count=0,
         max_rebinds=3,
         order_no=order_no,
-        purchased_at=datetime.utcnow(),
+        purchased_at=datetime.now(timezone.utc),
     )
     db.add(up)
 
@@ -503,7 +505,7 @@ def _append_history(up: UserPlugin, action: str, domain: str):
         history = json.loads(up.rebind_history) if up.rebind_history else []
     except (json.JSONDecodeError, TypeError):
         history = []
-    history.append({"action": action, "domain": domain, "time": datetime.utcnow().isoformat()})
+    history.append({"action": action, "domain": domain, "time": datetime.now(timezone.utc).isoformat()})
     up.rebind_history = json.dumps(history, ensure_ascii=False)
 
 

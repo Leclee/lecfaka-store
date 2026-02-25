@@ -70,7 +70,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         password_hash=hash_password(req.password),
         role="user",
         status=1,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.utcnow(),
     )
     db.add(user)
     await db.flush()  ## 获取 user.id
@@ -105,7 +105,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=403, detail="账号已被禁用")
 
     ## 更新最后登录时间
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.utcnow()
 
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)

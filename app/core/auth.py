@@ -34,7 +34,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(user_id: int, role: str, expires_delta: Optional[timedelta] = None) -> str:
     """创建 JWT access token"""
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
     payload = {
         "sub": str(user_id),
         "role": role,
@@ -46,7 +46,7 @@ def create_access_token(user_id: int, role: str, expires_delta: Optional[timedel
 
 def create_refresh_token(user_id: int) -> str:
     """创建 JWT refresh token"""
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days)
+    expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_token_expire_days)
     payload = {
         "sub": str(user_id),
         "exp": expire,

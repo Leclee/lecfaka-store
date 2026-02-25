@@ -301,7 +301,7 @@ async def upload_plugin(
         plugin.download_url = download_url
         plugin.price = price
         plugin.is_free = is_free
-        plugin.updated_at = datetime.now(timezone.utc)
+        plugin.updated_at = datetime.utcnow()
         msg = f"插件 '{plugin.name}' 已更新"
     else:
         ## 创建
@@ -444,7 +444,7 @@ async def edit_plugin(
 
         plugin.download_url = f"/uploads/plugins/{plugin_id}/{os.path.basename(file_path)}"
 
-    plugin.updated_at = datetime.now(timezone.utc)
+    plugin.updated_at = datetime.utcnow()
     await db.commit()
 
     return {
@@ -472,7 +472,7 @@ async def update_plugin_status(
         raise HTTPException(status_code=404, detail="插件不存在")
 
     plugin.status = req.status
-    plugin.updated_at = datetime.now(timezone.utc)
+    plugin.updated_at = datetime.utcnow()
 
     status_text = {0: "下架", 1: "上架", 2: "审核中"}.get(req.status, "未知")
     return {"message": f"插件 {plugin.name} 已{status_text}"}

@@ -33,7 +33,7 @@ async def seed(
     license_key = generate_key("AURORA")
     expires_at = None
     if expires_days > 0:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
+        expires_at = datetime.utcnow() + timedelta(days=expires_days)
 
     async with async_session_maker() as db:
         lic = License(
@@ -42,7 +42,7 @@ async def seed(
             domain=None,
             status=1,
             expires_at=expires_at,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.utcnow(),
             rebind_count=0,
             max_rebinds=max_rebinds,
             rebind_history=None,

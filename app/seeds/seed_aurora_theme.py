@@ -28,7 +28,7 @@ async def seed():
                 password_hash=hash_password("admin123456"),
                 role="superadmin",
                 status=1,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.utcnow(),
             )
             session.add(admin)
             await session.flush()
@@ -47,7 +47,7 @@ async def seed():
             old_plugin.description = "高端液态玻璃风格主题包，包含极光金、深海蓝、赛博紫、暗影绿四种配色方案"
             old_plugin.icon = "/static/plugins/theme_premium_pack/icon.svg"
             old_plugin.download_url = "/uploads/plugins/theme_premium_pack/theme_premium_pack_v1.0.0.zip"
-            old_plugin.updated_at = datetime.now(timezone.utc)
+            old_plugin.updated_at = datetime.utcnow()
             print("[OK] 旧版 theme_aurora_premium 已迁移为 theme_premium_pack")
 
         ## 3. 上架 Premium 高端主题包（新安装时使用）
@@ -94,7 +94,7 @@ async def seed():
                 is_official=True,
                 category="theme",
                 status=1,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.utcnow(),
             )
             session.add(plugin)
             print("[OK] Premium 高端主题包 已上架 (¥69)")

@@ -61,12 +61,22 @@ async def lifespan(app: FastAPI):
     yield
 
 
+from fastapi.responses import JSONResponse, FileResponse
+
 app = FastAPI(
     title="LecFaka Store",
     description="插件商店与授权服务器",
     version="2.0.0",
     lifespan=lifespan,
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"服务器内部错误: {str(exc)}"}
+    )
 
 app.add_middleware(
     CORSMiddleware,

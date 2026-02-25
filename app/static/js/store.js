@@ -587,6 +587,7 @@ function switchDashTab(el, tab) {
     if (tab === 'my-plugins') loadMyPlugins(main);
     else if (tab === 'domains') loadDomainManagement(main);
     else if (tab === 'orders') loadOrders(main);
+    else if (tab === 'author-plugins') loadAuthorPlugins(main);
     else if (tab === 'author-finance') loadAuthorFinance(main);
     else if (tab === 'admin-withdrawals') loadAdminWithdrawals(main);
     else if (tab === 'admin-stats') loadAdminStats(main);
@@ -998,6 +999,262 @@ async function toggleUserStatus(userId, newStatus) {
         loadAdminUsers(document.getElementById('dashboardMain'));
     } catch (err) {
         showToast(err.message, 'error');
+    }
+}
+
+// ==================== 作者插件管理 ====================
+
+/** 加载作者发布的插件列表 */
+async function loadAuthorPlugins(container) {
+    container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    try {
+        const data = await apiFetch('/author/plugins');
+        const plugins = data.items || [];
+
+        const statusBadge = (s) => {
+            if (s === 1) return '<span class="plugin-tag tag-purchased">已上架</span>';
+            if (s === 2) return '<span class="plugin-tag" style="background:rgba(250,173,20,.15);color:#faad14">审核中</span>';
+            return '<span class="plugin-tag" style="background:rgba(150,150,150,.15);color:#999">已下架</span>';
+        };
+
+        container.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                <h3 style="font-size:18px;margin:0">📦 我的发布 (${plugins.length})</h3>
+                <button class="btn btn-primary btn-sm" onclick="showAuthorUploadForm()">➕ 发布新插件</button>
+            </div>
+            <div id="authorUploadArea" style="display:none;margin-bottom:24px"></div>
+            <div id="authorUpdateArea" style="display:none;margin-bottom:24px"></div>
+            ${plugins.length === 0 ? '<div class="empty-state"><p>你还没有发布任何插件<br><small style="color:var(--color-text-muted)">点击上方按钮发布第一个插件吧！</small></p></div>' : `
+            <table class="dash-table">
+                <thead><tr><th>插件</th><th>类型</th><th>版本</th><th>价格</th><th>状态</th><th>下载数</th><th>操作</th></tr></thead>
+                <tbody>${plugins.map(p => `
+                    <tr>
+                        <td><strong>${p.name}</strong><br><span style="font-size:12px;color:var(--color-text-muted)">${p.plugin_id}</span></td>
+                        <td><span class="plugin-tag tag-${p.type}">${p.type}</span></td>
+                        <td>v${p.version}</td>
+                        <td>${p.is_free ? '<span style="color:#52c41a">免费</span>' : '<span style="color:#ff4d4f">¥' + p.price + '</span>'}</td>
+                        <td>${statusBadge(p.status)}</td>
+                        <td>${p.download_count || 0}</td>
+                        <td>
+                            <button class="btn btn-outline btn-sm" onclick="showAuthorUpdateForm('${p.plugin_id}', '${p.name}', '${p.version}')">更新版本</button>
+                        </td>
+                    </tr>
+                `).join('')}</tbody>
+            </table>`}
+        `;
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+    }
+}
+
+/** 显示作者上传新插件的表单 */
+function showAuthorUploadForm() {
+    const area = document.getElementById('authorUploadArea');
+    if (area.style.display === 'block') {
+        area.style.display = 'none';
+        return;
+    }
+    // 关闭更新区域
+    document.getElementById('authorUpdateArea').style.display = 'none';
+
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:24px">
+            <h4 style="margin-bottom:16px">🚀 发布新插件</h4>
+            <p style="color:var(--color-text-secondary);font-size:13px;margin-bottom:20px">
+                上传后插件将进入审核状态，管理员审核通过后自动上架。
+            </p>
+            <form id="authorUploadForm" onsubmit="submitAuthorPlugin(event)">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <div class="form-group">
+                        <label>插件 ID *</label>
+                        <input type="text" id="au_id" placeholder="例如: my_awesome_plugin" required
+                            pattern="[a-z][a-z0-9_]*" title="仅允许小写字母、数字和下划线，以字母开头"
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>插件名称 *</label>
+                        <input type="text" id="au_name" placeholder="例如: 我的插件" required
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>类型 *</label>
+                        <select id="au_type" required style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                            <option value="theme">主题模板</option>
+                            <option value="payment">支付接口</option>
+                            <option value="extension">功能扩展</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>版本 *</label>
+                        <input type="text" id="au_version" value="1.0.0" required
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>价格 (¥)</label>
+                        <input type="number" id="au_price" value="0" min="0" step="0.01"
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>作者名称</label>
+                        <input type="text" id="au_author" value="${currentUser?.username || ''}"
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>简介</label>
+                    <input type="text" id="au_desc" placeholder="一句话描述插件功能"
+                        style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>详细描述 (HTML)</label>
+                    <textarea id="au_detail" rows="4" placeholder="支持 HTML 格式"
+                        style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px;resize:vertical"></textarea>
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>插件包 (ZIP) *</label>
+                    <input type="file" id="au_file" accept=".zip" required
+                        style="padding:10px 0;color:var(--color-text);font-size:14px">
+                    <small style="color:var(--color-text-muted);display:block;margin-top:4px">
+                        ZIP 内必须包含 plugin.json，系统会自动规范化包结构
+                    </small>
+                </div>
+                <div style="display:flex;gap:12px;margin-top:20px">
+                    <button type="submit" class="btn btn-primary" id="auSubmitBtn">提交发布</button>
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('authorUploadArea').style.display='none'">取消</button>
+                </div>
+            </form>
+        </div>
+    `;
+}
+
+/** 提交作者上传的插件 */
+async function submitAuthorPlugin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('auSubmitBtn');
+    btn.textContent = '上传中...';
+    btn.disabled = true;
+
+    try {
+        const fileInput = document.getElementById('au_file');
+        if (!fileInput.files.length) {
+            showToast('请选择 ZIP 文件', 'error');
+            return;
+        }
+
+        const price = parseFloat(document.getElementById('au_price').value) || 0;
+        const meta = {
+            plugin_id: document.getElementById('au_id').value.trim(),
+            name: document.getElementById('au_name').value.trim(),
+            type: document.getElementById('au_type').value,
+            version: document.getElementById('au_version').value.trim(),
+            price: price,
+            is_free: price === 0,
+            author_name: document.getElementById('au_author').value.trim(),
+            description: document.getElementById('au_desc').value.trim(),
+            detail_html: document.getElementById('au_detail').value.trim(),
+        };
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('meta', JSON.stringify(meta));
+
+        const res = await fetch(`${API_BASE}/author/plugins/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '上传失败');
+
+        showToast(data.message || '发布成功！', 'success');
+        document.getElementById('authorUploadArea').style.display = 'none';
+        loadAuthorPlugins(document.getElementById('dashboardMain'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.textContent = '提交发布';
+        btn.disabled = false;
+    }
+}
+
+/** 显示作者版本更新表单 */
+function showAuthorUpdateForm(pluginId, pluginName, currentVersion) {
+    const area = document.getElementById('authorUpdateArea');
+    document.getElementById('authorUploadArea').style.display = 'none';
+
+    if (area.style.display === 'block' && area.dataset.pluginId === pluginId) {
+        area.style.display = 'none';
+        return;
+    }
+    area.dataset.pluginId = pluginId;
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:24px">
+            <h4 style="margin-bottom:8px">🔄 更新版本：${pluginName}</h4>
+            <p style="color:var(--color-text-secondary);font-size:13px;margin-bottom:16px">当前版本 v${currentVersion}，更新后将进入审核状态。</p>
+            <form onsubmit="submitAuthorUpdate(event, '${pluginId}')">
+                <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
+                    <div class="form-group">
+                        <label>新版本号 *</label>
+                        <input type="text" id="auUpd_version" placeholder="例如: 1.1.0" required
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                    <div class="form-group">
+                        <label>更新日志</label>
+                        <input type="text" id="auUpd_changelog" placeholder="本次更新了什么..."
+                            style="width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top:16px">
+                    <label>新版本 ZIP 文件 *</label>
+                    <input type="file" id="auUpd_file" accept=".zip" required
+                        style="padding:10px 0;color:var(--color-text);font-size:14px">
+                </div>
+                <div style="display:flex;gap:12px;margin-top:16px">
+                    <button type="submit" class="btn btn-primary" id="auUpdSubmitBtn">提交更新</button>
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('authorUpdateArea').style.display='none'">取消</button>
+                </div>
+            </form>
+        </div>
+    `;
+}
+
+/** 提交作者版本更新 */
+async function submitAuthorUpdate(e, pluginId) {
+    e.preventDefault();
+    const btn = document.getElementById('auUpdSubmitBtn');
+    btn.textContent = '更新中...';
+    btn.disabled = true;
+
+    try {
+        const fileInput = document.getElementById('auUpd_file');
+        if (!fileInput.files.length) {
+            showToast('请选择 ZIP 文件', 'error');
+            return;
+        }
+
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        fd.append('version', document.getElementById('auUpd_version').value.trim());
+        fd.append('changelog', document.getElementById('auUpd_changelog').value.trim());
+
+        const res = await fetch(`${API_BASE}/author/plugins/${pluginId}/update`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '更新失败');
+
+        showToast(data.message || '更新成功！', 'success');
+        document.getElementById('authorUpdateArea').style.display = 'none';
+        loadAuthorPlugins(document.getElementById('dashboardMain'));
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.textContent = '提交更新';
+        btn.disabled = false;
     }
 }
 

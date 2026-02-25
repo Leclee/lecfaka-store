@@ -14,6 +14,7 @@ from .api.v1.store import router as store_router
 from .api.v1.license import router as license_router
 from .api.v1.auth import router as auth_router
 from .api.v1.admin import router as admin_router
+from .api.v1.author import router as author_router
 from .api.v1.payment import router as payment_router
 from .api.v1.finance import router as finance_router
 
@@ -80,6 +81,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(store_router, prefix="/api/v1/store", tags=["Store"])
 app.include_router(license_router, prefix="/api/v1/license", tags=["License"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(author_router, prefix="/api/v1/author", tags=["Author"])
 app.include_router(payment_router, prefix="/api/v1/pay", tags=["Payment"])
 app.include_router(finance_router, prefix="/api/v1/finance", tags=["Finance"])
 

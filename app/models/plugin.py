@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 from decimal import Decimal
-from sqlalchemy import String, Integer, DateTime, Text, Numeric, Boolean, ForeignKey
+from sqlalchemy import String, Integer, DateTime, Text, Numeric, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
@@ -101,6 +101,9 @@ class UserPlugin(Base):
     绑定策略：一个购买记录绑定一个域名，最多换绑 max_rebinds 次
     """
     __tablename__ = "user_plugins"
+    __table_args__ = (
+        UniqueConstraint("user_id", "plugin_id", name="uq_user_plugin"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_users.id"), nullable=False, index=True)

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     ## 支付订单过期时间（分钟）
     payment_expire_minutes: int = 30
 
+    ## 作者收益分成比例（0.0~1.0，表示作者拿到的比例，如 0.7 表示作者 70%、平台 30%）
+    author_commission_rate: float = 0.7
+
     ## 预留：USDT 支付
     # usdt_api_url: str = ""
     # usdt_api_key: str = ""

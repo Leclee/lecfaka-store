@@ -6,7 +6,6 @@
 
 import json
 import os
-import shutil
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -19,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...database import get_db
 from ...models.plugin import StoreUser, StorePlugin, UserPlugin, PaymentOrder
 from ...core.auth import get_current_user, require_role
+from ...core.zip_utils import normalize_zip
 
 router = APIRouter()
 
@@ -239,7 +239,6 @@ async def upload_plugin(
     - 剔除 __pycache__ 等垃圾文件
     - 验证 plugin.json 存在
     """
-    import zipfile
     import tempfile
 
     ## 解析元数据
@@ -262,87 +261,21 @@ async def upload_plugin(
         tmp_raw.write(raw_content)
         tmp_raw_path = tmp_raw.name
 
-    extract_tmp = None
     try:
-        ## 解压验证
-        with zipfile.ZipFile(tmp_raw_path, "r") as z:
-            names = z.namelist()
-
-            ## 查找 plugin.json
-            plugin_json_entry = None
-            for n in names:
-                if n.endswith("/"):
-                    continue
-                parts = n.replace("\\", "/").split("/")
-                if parts[-1] == "plugin.json":
-                    plugin_json_entry = n
-                    break
-
-            if not plugin_json_entry:
-                raise HTTPException(status_code=400, detail="zip 包中缺少 plugin.json")
-
-            ## 解压到临时目录
-            extract_tmp = tempfile.mkdtemp(prefix="store_upload_")
-            z.extractall(extract_tmp)
-
-        ## 定位 plugin.json 所在目录
-        prefix_dir = os.path.dirname(plugin_json_entry.replace("/", os.sep))
-        if prefix_dir:
-            source_dir = os.path.join(extract_tmp, prefix_dir)
-        else:
-            source_dir = extract_tmp
-
-        if not os.path.exists(os.path.join(source_dir, "plugin.json")):
-            raise HTTPException(status_code=400, detail="解压后找不到 plugin.json")
-
-        ## 读取 plugin.json 并验证 id 字段与请求一致
-        with open(os.path.join(source_dir, "plugin.json"), "r", encoding="utf-8") as f:
-            try:
-                pj_data = json.loads(f.read())
-            except json.JSONDecodeError as e:
-                raise HTTPException(status_code=400, detail=f"plugin.json 格式错误: {e}")
-        zip_plugin_id = pj_data.get("id", "").strip()
-        if zip_plugin_id and zip_plugin_id != plugin_id:
-            raise HTTPException(
-                status_code=400,
-                detail=f"plugin.json 中的 id '{zip_plugin_id}' 与声明的 plugin_id '{plugin_id}' 不一致",
-            )
-
-        ## 规范化重新打包：确保顶级目录为 plugin_id
+        ## 使用公共规范化函数
         version = meta_data.get("version", "1.0.0")
         plugin_dir = os.path.join(UPLOAD_DIR, plugin_id)
         os.makedirs(plugin_dir, exist_ok=True)
         file_path = os.path.join(plugin_dir, f"{plugin_id}_v{version}.zip")
 
-        ignored_dirs = {"__pycache__", ".git", ".DS_Store"}
-        ignored_files = {".DS_Store", "Thumbs.db"}
-
-        with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zout:
-            for root, dirs, files in os.walk(source_dir):
-                ## 过滤垃圾目录
-                dirs[:] = [d for d in dirs if d not in ignored_dirs]
-                for fname in files:
-                    if fname in ignored_files:
-                        continue
-                    abs_path = os.path.join(root, fname)
-                    rel_path = os.path.relpath(abs_path, source_dir)
-                    ## 写入时加上 plugin_id/ 前缀
-                    arcname = os.path.join(plugin_id, rel_path).replace("\\", "/")
-                    zout.write(abs_path, arcname)
-
-        final_names = zipfile.ZipFile(file_path, "r").namelist()
-        import logging
-        logging.getLogger("store.upload").info(
-            f"[upload] 规范化完成: plugin_id={plugin_id}, 文件数={len(final_names)}, 内容={final_names[:10]}"
-        )
+        normalize_zip(tmp_raw_path, plugin_id, file_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
-        ## 清理临时文件
         try:
             os.unlink(tmp_raw_path)
         except OSError:
             pass
-        if extract_tmp and os.path.exists(extract_tmp):
-            shutil.rmtree(extract_tmp, ignore_errors=True)
 
     ## 生成下载 URL
     download_url = f"/uploads/plugins/{plugin_id}/{os.path.basename(file_path)}"

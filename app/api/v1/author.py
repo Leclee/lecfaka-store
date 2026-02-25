@@ -9,8 +9,6 @@
 
 import json
 import os
-import shutil
-import zipfile
 import tempfile
 import logging
 from datetime import datetime
@@ -25,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...database import get_db
 from ...models.plugin import StoreUser, StorePlugin
 from ...core.auth import get_current_user, require_role
+from ...core.zip_utils import normalize_zip
 
 router = APIRouter()
 logger = logging.getLogger("lecfaka_store.author")
@@ -35,10 +34,6 @@ UPLOAD_DIR = os.path.join(
     "uploads", "plugins",
 )
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-## zip 规范化时需要忽略的文件/目录
-_IGNORED_DIRS = {"__pycache__", ".git", ".DS_Store"}
-_IGNORED_FILES = {".DS_Store", "Thumbs.db"}
 
 
 # ==================== 权限依赖 ====================
@@ -51,85 +46,7 @@ async def require_author(user: StoreUser = Depends(get_current_user)):
     return user
 
 
-# ==================== 通用工具 ====================
-
-def _normalize_zip(raw_zip_path: str, plugin_id: str, dest_path: str):
-    """
-    @brief 将原始 zip 解压后规范化重新打包
-    @param raw_zip_path 原始 zip 路径
-    @param plugin_id    插件 ID（作为顶级目录名）
-    @param dest_path    规范化 zip 的输出路径
-
-    规范化规则：
-    1. 确保顶级目录为 {plugin_id}/
-    2. 剔除 __pycache__/.git/.DS_Store 等垃圾
-    3. 验证 plugin.json 存在
-    """
-    extract_tmp = None
-    try:
-        with zipfile.ZipFile(raw_zip_path, "r") as z:
-            names = z.namelist()
-
-            ## 查找 plugin.json
-            plugin_json_entry = None
-            for n in names:
-                if n.endswith("/"):
-                    continue
-                parts = n.replace("\\", "/").split("/")
-                if parts[-1] == "plugin.json":
-                    plugin_json_entry = n
-                    break
-
-            if not plugin_json_entry:
-                raise ValueError("zip 包中缺少 plugin.json")
-
-            extract_tmp = tempfile.mkdtemp(prefix="author_upload_")
-            z.extractall(extract_tmp)
-
-        ## 定位 plugin.json 所在目录
-        prefix_dir = os.path.dirname(plugin_json_entry.replace("/", os.sep))
-        if prefix_dir:
-            source_dir = os.path.join(extract_tmp, prefix_dir)
-        else:
-            source_dir = extract_tmp
-
-        if not os.path.exists(os.path.join(source_dir, "plugin.json")):
-            raise ValueError("解压后找不到 plugin.json")
-
-        ## 读取 plugin.json 并验证 id 字段与请求一致
-        with open(os.path.join(source_dir, "plugin.json"), "r", encoding="utf-8") as f:
-            try:
-                pj = json.loads(f.read())
-            except json.JSONDecodeError as e:
-                raise ValueError(f"plugin.json 格式错误: {e}")
-        zip_plugin_id = pj.get("id", "").strip()
-        if zip_plugin_id and zip_plugin_id != plugin_id:
-            raise ValueError(
-                f"plugin.json 中的 id '{zip_plugin_id}' 与声明的 plugin_id '{plugin_id}' 不一致"
-            )
-
-        ## 重新打包
-        with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zout:
-            for root, dirs, files in os.walk(source_dir):
-                dirs[:] = [d for d in dirs if d not in _IGNORED_DIRS]
-                for fname in files:
-                    if fname in _IGNORED_FILES:
-                        continue
-                    abs_path = os.path.join(root, fname)
-                    rel_path = os.path.relpath(abs_path, source_dir)
-                    arcname = os.path.join(plugin_id, rel_path).replace("\\", "/")
-                    zout.write(abs_path, arcname)
-
-        logger.info(
-            f"[normalize] 规范化完成: plugin_id={plugin_id}, "
-            f"文件数={len(zipfile.ZipFile(dest_path, 'r').namelist())}"
-        )
-    finally:
-        if extract_tmp and os.path.exists(extract_tmp):
-            shutil.rmtree(extract_tmp, ignore_errors=True)
-
-
-# ==================== 我发布的插件 ====================
+# ==================== 我发布的插件 ======================================
 
 @router.get("/plugins")
 async def my_published_plugins(
@@ -229,7 +146,7 @@ async def author_upload_plugin(
         os.makedirs(plugin_dir, exist_ok=True)
         final_path = os.path.join(plugin_dir, f"{plugin_id}_v{version}.zip")
 
-        _normalize_zip(tmp_raw_path, plugin_id, final_path)
+        normalize_zip(tmp_raw_path, plugin_id, final_path)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -339,7 +256,7 @@ async def author_update_plugin_version(
         plugin_dir = os.path.join(UPLOAD_DIR, plugin_id)
         os.makedirs(plugin_dir, exist_ok=True)
         final_path = os.path.join(plugin_dir, f"{plugin_id}_v{version}.zip")
-        _normalize_zip(tmp_raw_path, plugin_id, final_path)
+        normalize_zip(tmp_raw_path, plugin_id, final_path)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:

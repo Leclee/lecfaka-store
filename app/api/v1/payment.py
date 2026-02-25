@@ -174,14 +174,14 @@ async def create_order(
 
 # ==================== 支付回调（异步通知） ====================
 
-@router.get("/notify/{gateway}")
+@router.api_route("/notify/{gateway}", methods=["GET", "POST"])
 async def payment_notify(
     gateway: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    支付网关异步回调（GET 请求）
+    支付网关异步回调（同时支持 GET 和 POST）
 
     接收支付网关的回调通知，验证签名后：
     1. 更新 PaymentOrder 状态为 paid
@@ -195,8 +195,18 @@ async def payment_notify(
         logger.error(f"未知支付网关回调: {gateway}")
         return PlainTextResponse("fail")
 
-    ## 验证回调签名
-    params = dict(request.query_params)
+    ## 验证回调签名（兼容 GET 和 POST）
+    if request.method == "POST":
+        body = await request.body()
+        try:
+            params = dict(json.loads(body))
+        except Exception:
+            ## 如果不是 JSON，尝试 form 格式
+            form = await request.form()
+            params = dict(form)
+    else:
+        params = dict(request.query_params)
+
     notify_result = await gw.verify_notify(params)
 
     if not notify_result.valid:
@@ -256,7 +266,7 @@ async def payment_notify(
         )
         db.add(up)
 
-        ## 更新插件购买计数并增加作者收益
+        ## 更新插件购买计数并增加作者收益（按分成比例）
         plugin_result = await db.execute(
             select(StorePlugin).where(StorePlugin.plugin_id == order.plugin_id)
         )
@@ -269,9 +279,16 @@ async def payment_notify(
                 )
                 author = author_result.scalar_one_or_none()
                 if author:
-                    amount = order.actual_amount or order.amount
-                    author.balance = (author.balance or 0) + float(amount)
-                    author.total_income = (author.total_income or 0) + float(amount)
+                    total_amount = float(order.actual_amount or order.amount)
+                    ## 按平台分成比例计算作者收益
+                    rate = settings.author_commission_rate
+                    author_income = round(total_amount * rate, 2)
+                    author.balance = (author.balance or 0) + author_income
+                    author.total_income = (author.total_income or 0) + author_income
+                    logger.info(
+                        f"作者分成: total={total_amount}, rate={rate}, "
+                        f"author_income={author_income}, author_id={author.id}"
+                    )
 
     await db.flush()
     logger.info(f"支付成功: order_no={order_no}, trade_no={notify_result.trade_no}")

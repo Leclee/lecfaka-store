@@ -1,5 +1,5 @@
 """
-Aurora Premium 极光主题 - 上架种子脚本
+Premium 高端主题包 - 上架种子脚本
 
 运行: python -m app.seeds.seed_aurora_theme
 """
@@ -36,36 +36,59 @@ async def seed():
         else:
             print(f"[OK] 超管账号已存在: {admin.email}")
 
-        ## 2. 上架 Aurora Premium 主题
-        result = await session.execute(
+        ## 2. 删除旧版 theme_aurora_premium（如果存在）
+        old_result = await session.execute(
             select(StorePlugin).where(StorePlugin.plugin_id == "theme_aurora_premium")
+        )
+        old_plugin = old_result.scalar_one_or_none()
+        if old_plugin:
+            old_plugin.plugin_id = "theme_premium_pack"
+            old_plugin.name = "Premium 高端主题包"
+            old_plugin.description = "高端液态玻璃风格主题包，包含极光金、深海蓝、赛博紫、暗影绿四种配色方案"
+            old_plugin.icon = "/static/plugins/theme_premium_pack/icon.svg"
+            old_plugin.download_url = "/uploads/plugins/theme_premium_pack/theme_premium_pack_v1.0.0.zip"
+            old_plugin.updated_at = datetime.now(timezone.utc)
+            print("[OK] 旧版 theme_aurora_premium 已迁移为 theme_premium_pack")
+
+        ## 3. 上架 Premium 高端主题包（新安装时使用）
+        result = await session.execute(
+            select(StorePlugin).where(StorePlugin.plugin_id == "theme_premium_pack")
         )
         existing = result.scalar_one_or_none()
         if existing:
-            print(f"[SKIP] Aurora Premium 已上架 (id={existing.id})")
+            print(f"[SKIP] Premium 高端主题包 已上架 (id={existing.id})")
         else:
             plugin = StorePlugin(
-                plugin_id="theme_aurora_premium",
-                name="Aurora Premium 极光主题",
+                plugin_id="theme_premium_pack",
+                name="Premium 高端主题包",
                 version="1.0.0",
                 type="theme",
                 author_id=admin.id,
                 author_name="LecFaka Official",
-                description="高级暗黑极光主题 - 渐变极光色彩 × 毛玻璃质感，为你的发卡站带来专业级视觉体验",
+                description="高端液态玻璃风格主题包，包含极光金、深海蓝、赛博紫、暗影绿四种配色方案，支持亮色/暗色双模式切换、毛玻璃特效",
                 detail_html="""
-                <h2>Aurora Premium 极光主题</h2>
-                <p>专为 LecFaka 发卡系统打造的高端暗黑主题，采用极光色彩渐变设计。</p>
-                <h3>特色功能</h3>
+                <h2>Premium 高端主题包</h2>
+                <p>专为 LecFaka 发卡系统打造的高端主题包，基于 Liquid Glass 设计风格。</p>
+                <h3>包含配色方案</h3>
                 <ul>
-                    <li>极光渐变色彩体系 (Purple → Cyan → Emerald)</li>
-                    <li>毛玻璃 (Glassmorphism) 卡片效果</li>
-                    <li>深度优化的暗黑模式</li>
+                    <li>🌟 极光金 — 深色石墨 + 金色点缀 (默认)</li>
+                    <li>🌊 深海蓝 — 深邃蓝调 + 科技感</li>
+                    <li>💜 赛博紫 — 霓虹紫色 + 未来感</li>
+                    <li>🌿 暗影绿 — 自然绿调 + 清新质感</li>
+                </ul>
+                <h3>核心特性</h3>
+                <ul>
+                    <li>亮色 / 暗色双模式切换</li>
+                    <li>毛玻璃 (Glassmorphism) 视觉效果</li>
+                    <li>自定义强调色</li>
+                    <li>Cormorant + Montserrat 高端字体组合</li>
                     <li>AntD Token 完美适配</li>
                     <li>响应式设计，移动端优化</li>
                 </ul>
                 """,
-                icon="/static/plugins/theme_aurora_premium/icon.svg",
-                website="https://plugins.leclee.top/plugin/theme_aurora_premium",
+                icon="/static/plugins/theme_premium_pack/icon.svg",
+                website="https://plugins.leclee.top/plugin/theme_premium_pack",
+                download_url="/uploads/plugins/theme_premium_pack/theme_premium_pack_v1.0.0.zip",
                 price=69,
                 is_free=False,
                 is_official=True,
@@ -74,7 +97,7 @@ async def seed():
                 created_at=datetime.now(timezone.utc),
             )
             session.add(plugin)
-            print("[OK] Aurora Premium 已上架 (¥69)")
+            print("[OK] Premium 高端主题包 已上架 (¥69)")
 
         await session.commit()
 

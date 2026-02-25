@@ -295,6 +295,19 @@ async def upload_plugin(
         if not os.path.exists(os.path.join(source_dir, "plugin.json")):
             raise HTTPException(status_code=400, detail="解压后找不到 plugin.json")
 
+        ## 读取 plugin.json 并验证 id 字段与请求一致
+        with open(os.path.join(source_dir, "plugin.json"), "r", encoding="utf-8") as f:
+            try:
+                pj_data = json.loads(f.read())
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"plugin.json 格式错误: {e}")
+        zip_plugin_id = pj_data.get("id", "").strip()
+        if zip_plugin_id and zip_plugin_id != plugin_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"plugin.json 中的 id '{zip_plugin_id}' 与声明的 plugin_id '{plugin_id}' 不一致",
+            )
+
         ## 规范化重新打包：确保顶级目录为 plugin_id
         version = meta_data.get("version", "1.0.0")
         plugin_dir = os.path.join(UPLOAD_DIR, plugin_id)

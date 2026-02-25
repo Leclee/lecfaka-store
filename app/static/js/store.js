@@ -10,6 +10,37 @@
 
 const API_BASE = '/api/v1';
 
+// ==================== 工具函数 ====================
+
+/**
+ * @brief 转义 HTML 特殊字符，防止 XSS
+ * @param {string} str 待转义字符串
+ * @return {string} 转义后的安全字符串
+ */
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+}
+
+/**
+ * @brief 格式化日期字符串为本地可读格式
+ * @param {string} isoStr ISO 8601 日期字符串
+ * @return {string} 格式化后的日期，如 "2026-02-25 10:30"
+ */
+function formatDate(isoStr) {
+    if (!isoStr) return '-';
+    try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return isoStr;
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch {
+        return isoStr;
+    }
+}
+
 // ==================== 状态 ====================
 let currentUser = null;
 let accessToken = localStorage.getItem('store_token') || null;
@@ -794,35 +825,83 @@ async function loadAdminStats(container) {
 async function loadAdminPlugins(container) {
     container.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
     try {
-        const data = await apiFetch('/store/plugins');
+        const data = await apiFetch('/store/plugins?include_review=1');
         const plugins = data.items || [];
+
+        /** @brief 根据状态值返回对应的彩色标签 HTML */
+        const statusBadge = (s) => {
+            if (s === 2) return '<span class="plugin-tag" style="background:#fffbe6;color:#faad14">⏳ 审核中</span>';
+            if (s === 1) return '<span class="plugin-tag tag-purchased">✅ 已上架</span>';
+            return '<span class="plugin-tag" style="background:#fff1f0;color:#f5222d">❌ 已下架</span>';
+        };
+
+        /** @brief 根据当前状态生成操作按钮 */
+        const actionBtns = (p) => {
+            let btns = `<button class="btn btn-outline btn-sm" onclick="editPlugin('${escapeHtml(p.id)}')">编辑</button> `;
+            if (p.status === 2) {
+                btns += `<button class="btn btn-primary btn-sm" onclick="reviewPlugin('${escapeHtml(p.id)}', 1)">✅ 上架</button> `;
+                btns += `<button class="btn btn-danger btn-sm" onclick="reviewPlugin('${escapeHtml(p.id)}', 0)">❌ 拒绝</button>`;
+            } else if (p.status === 1) {
+                btns += `<button class="btn btn-outline btn-sm" style="color:#f5222d;border-color:#f5222d" onclick="reviewPlugin('${escapeHtml(p.id)}', 0)">下架</button>`;
+            } else {
+                btns += `<button class="btn btn-primary btn-sm" onclick="reviewPlugin('${escapeHtml(p.id)}', 1)">上架</button>`;
+            }
+            return btns;
+        };
+
+        // 审核中的插件优先显示
+        const sorted = [...plugins].sort((a, b) => {
+            if (a.status === 2 && b.status !== 2) return -1;
+            if (a.status !== 2 && b.status === 2) return 1;
+            return 0;
+        });
+        const pendingCount = plugins.filter(p => p.status === 2).length;
 
         container.innerHTML = `
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
-                <h3 style="font-size:18px;margin:0">📦 插件管理 (${plugins.length})</h3>
+                <h3 style="font-size:18px;margin:0">📦 插件管理 (${plugins.length})${pendingCount > 0 ? ` <span style="color:#faad14;font-size:14px">| ${pendingCount} 个待审核</span>` : ''}</h3>
                 <button class="btn btn-primary btn-sm" onclick="showAddPluginForm()">➕ 发布插件</button>
             </div>
             <div id="addPluginArea" style="display:none;margin-bottom:24px"></div>
-            ${plugins.length === 0 ? '<div class="empty-state"><p>还没有插件，点击上方按钮发布第一个插件</p></div>' : `
+            ${sorted.length === 0 ? '<div class="empty-state"><p>还没有插件，点击上方按钮发布第一个插件</p></div>' : `
             <table class="dash-table">
-                <thead><tr><th>插件</th><th>类型</th><th>版本</th><th>价格</th><th>状态</th><th>购买数</th><th>操作</th></tr></thead>
-                <tbody>${plugins.map(p => `
-                    <tr>
-                        <td><strong>${p.name}</strong><br><span style="font-size:12px;color:var(--color-text-muted)">${p.id}</span></td>
-                        <td><span class="plugin-tag tag-${p.type}">${p.type}</span></td>
-                        <td>v${p.version}</td>
+                <thead><tr><th>插件</th><th>作者</th><th>类型</th><th>版本</th><th>价格</th><th>状态</th><th>购买数</th><th>操作</th></tr></thead>
+                <tbody>${sorted.map(p => `
+                    <tr${p.status === 2 ? ' style="background:rgba(250,173,20,0.06)"' : ''}>
+                        <td><strong>${escapeHtml(p.name)}</strong><br><span style="font-size:12px;color:var(--color-text-muted)">${escapeHtml(p.id)}</span></td>
+                        <td>${escapeHtml(p.author || '-')}</td>
+                        <td><span class="plugin-tag tag-${p.type}">${escapeHtml(p.type)}</span></td>
+                        <td>v${escapeHtml(p.version)}</td>
                         <td>${p.is_free ? '<span style="color:#52c41a">免费</span>' : '<span style="color:#ff4d4f">¥' + p.price + '</span>'}</td>
-                        <td><span class="plugin-tag ${p.status !== undefined && p.status !== 1 ? '' : 'tag-purchased'}">${p.status === 1 || p.status === undefined ? '已上架' : '未上架'}</span></td>
+                        <td>${statusBadge(p.status)}</td>
                         <td>${p.purchase_count || 0}</td>
-                        <td>
-                            <button class="btn btn-outline btn-sm" onclick="editPlugin('${p.id}')">编辑</button>
-                        </td>
+                        <td>${actionBtns(p)}</td>
                     </tr>
                 `).join('')}</tbody>
             </table>`}
         `;
     } catch (err) {
-        container.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
+        container.innerHTML = `<div class="empty-state"><p>加载失败：${escapeHtml(err.message)}</p></div>`;
+    }
+}
+
+/**
+ * @brief 审核插件：修改插件上架/下架状态
+ * @param {string} pluginId 插件 ID
+ * @param {number} newStatus 目标状态 (0=下架, 1=上架)
+ */
+async function reviewPlugin(pluginId, newStatus) {
+    const actionText = newStatus === 1 ? '上架' : '下架/拒绝';
+    if (!confirm(`确定要将插件 "${pluginId}" 设为${actionText}？`)) return;
+    try {
+        const res = await apiFetch(`/admin/plugins/${pluginId}/status`, {
+            method: 'PUT',
+            body: JSON.stringify({ status: newStatus }),
+        });
+        showToast(res.message || `${actionText}成功`, 'success');
+        loadAdminPlugins(document.getElementById('dashboardMain'));
+    } catch (err) {
+        showToast(err.message || `${actionText}失败`, 'error');
     }
 }
 

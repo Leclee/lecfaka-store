@@ -33,10 +33,15 @@ async def list_plugins(
     type: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    include_review: Optional[int] = Query(None),
     user: Optional[StoreUser] = Depends(get_optional_user),
 ):
     """获取插件列表（公开接口，登录用户会标记已购买状态）"""
-    query = select(StorePlugin).where(StorePlugin.status == 1)
+    ## 管理员可通过 include_review=1 同时查看审核中的插件
+    if include_review == 1 and user and user.role == "superadmin":
+        query = select(StorePlugin).where(StorePlugin.status.in_([1, 2]))
+    else:
+        query = select(StorePlugin).where(StorePlugin.status == 1)
 
     if type:
         query = query.where(StorePlugin.type == type)

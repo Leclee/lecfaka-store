@@ -96,6 +96,18 @@ def _normalize_zip(raw_zip_path: str, plugin_id: str, dest_path: str):
         if not os.path.exists(os.path.join(source_dir, "plugin.json")):
             raise ValueError("解压后找不到 plugin.json")
 
+        ## 读取 plugin.json 并验证 id 字段与请求一致
+        with open(os.path.join(source_dir, "plugin.json"), "r", encoding="utf-8") as f:
+            try:
+                pj = json.loads(f.read())
+            except json.JSONDecodeError as e:
+                raise ValueError(f"plugin.json 格式错误: {e}")
+        zip_plugin_id = pj.get("id", "").strip()
+        if zip_plugin_id and zip_plugin_id != plugin_id:
+            raise ValueError(
+                f"plugin.json 中的 id '{zip_plugin_id}' 与声明的 plugin_id '{plugin_id}' 不一致"
+            )
+
         ## 重新打包
         with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zout:
             for root, dirs, files in os.walk(source_dir):

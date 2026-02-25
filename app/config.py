@@ -51,3 +51,19 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+## 安全检查：默认密钥必须在生产环境中更改
+_DEFAULT_KEY = "store-secret-key-change-this"
+if settings.secret_key == _DEFAULT_KEY:
+    if not settings.debug:
+        import sys
+        print(
+            "\n[FATAL] SECRET_KEY 仍为默认值，生产环境中存在严重安全风险！\n"
+            "请在 .env 文件中设置: SECRET_KEY=<你的随机密钥>\n"
+        )
+        sys.exit(1)
+    else:
+        import logging as _log
+        _log.warning(
+            "[安全警告] SECRET_KEY 为默认值。生产环境部署前请务必在 .env 中修改。"
+        )

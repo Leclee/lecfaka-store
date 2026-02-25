@@ -233,7 +233,15 @@ async def upload_plugin(
     前端通过 FormData 发送：
     - file: ZIP 文件
     - meta: JSON 字符串，包含插件元数据
+
+    上传后会自动规范化 zip 结构：
+    - 确保有 {plugin_id}/ 顶级目录
+    - 剔除 __pycache__ 等垃圾文件
+    - 验证 plugin.json 存在
     """
+    import zipfile
+    import tempfile
+
     ## 解析元数据
     try:
         meta_data = json.loads(meta)
@@ -248,14 +256,80 @@ async def upload_plugin(
     if not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="只支持 ZIP 格式")
 
-    ## 保存文件
-    plugin_dir = os.path.join(UPLOAD_DIR, plugin_id)
-    os.makedirs(plugin_dir, exist_ok=True)
-    file_path = os.path.join(plugin_dir, f"{plugin_id}_v{meta_data.get('version', '1.0.0')}.zip")
+    ## 读取上传的 zip 到临时文件
+    raw_content = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_raw:
+        tmp_raw.write(raw_content)
+        tmp_raw_path = tmp_raw.name
 
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    extract_tmp = None
+    try:
+        ## 解压验证
+        with zipfile.ZipFile(tmp_raw_path, "r") as z:
+            names = z.namelist()
+
+            ## 查找 plugin.json
+            plugin_json_entry = None
+            for n in names:
+                if n.endswith("/"):
+                    continue
+                parts = n.replace("\\", "/").split("/")
+                if parts[-1] == "plugin.json":
+                    plugin_json_entry = n
+                    break
+
+            if not plugin_json_entry:
+                raise HTTPException(status_code=400, detail="zip 包中缺少 plugin.json")
+
+            ## 解压到临时目录
+            extract_tmp = tempfile.mkdtemp(prefix="store_upload_")
+            z.extractall(extract_tmp)
+
+        ## 定位 plugin.json 所在目录
+        prefix_dir = os.path.dirname(plugin_json_entry.replace("/", os.sep))
+        if prefix_dir:
+            source_dir = os.path.join(extract_tmp, prefix_dir)
+        else:
+            source_dir = extract_tmp
+
+        if not os.path.exists(os.path.join(source_dir, "plugin.json")):
+            raise HTTPException(status_code=400, detail="解压后找不到 plugin.json")
+
+        ## 规范化重新打包：确保顶级目录为 plugin_id
+        version = meta_data.get("version", "1.0.0")
+        plugin_dir = os.path.join(UPLOAD_DIR, plugin_id)
+        os.makedirs(plugin_dir, exist_ok=True)
+        file_path = os.path.join(plugin_dir, f"{plugin_id}_v{version}.zip")
+
+        ignored_dirs = {"__pycache__", ".git", ".DS_Store"}
+        ignored_files = {".DS_Store", "Thumbs.db"}
+
+        with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zout:
+            for root, dirs, files in os.walk(source_dir):
+                ## 过滤垃圾目录
+                dirs[:] = [d for d in dirs if d not in ignored_dirs]
+                for fname in files:
+                    if fname in ignored_files:
+                        continue
+                    abs_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(abs_path, source_dir)
+                    ## 写入时加上 plugin_id/ 前缀
+                    arcname = os.path.join(plugin_id, rel_path).replace("\\", "/")
+                    zout.write(abs_path, arcname)
+
+        final_names = zipfile.ZipFile(file_path, "r").namelist()
+        import logging
+        logging.getLogger("store.upload").info(
+            f"[upload] 规范化完成: plugin_id={plugin_id}, 文件数={len(final_names)}, 内容={final_names[:10]}"
+        )
+    finally:
+        ## 清理临时文件
+        try:
+            os.unlink(tmp_raw_path)
+        except OSError:
+            pass
+        if extract_tmp and os.path.exists(extract_tmp):
+            shutil.rmtree(extract_tmp, ignore_errors=True)
 
     ## 生成下载 URL
     download_url = f"/uploads/plugins/{plugin_id}/{os.path.basename(file_path)}"

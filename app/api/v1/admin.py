@@ -330,6 +330,130 @@ async def upload_plugin(
     return {"message": msg, "plugin_id": plugin_id, "download_url": download_url}
 
 
+@router.get("/plugins/{plugin_id}")
+async def get_plugin_detail(
+    plugin_id: str,
+    admin: StoreUser = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取插件详情（供编辑表单回填）"""
+    result = await db.execute(
+        select(StorePlugin).where(StorePlugin.plugin_id == plugin_id)
+    )
+    plugin = result.scalar_one_or_none()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="插件不存在")
+
+    return {
+        "plugin_id": plugin.plugin_id,
+        "name": plugin.name,
+        "type": plugin.type,
+        "version": plugin.version,
+        "price": float(plugin.price),
+        "is_free": plugin.is_free,
+        "author_name": plugin.author_name,
+        "description": plugin.description or "",
+        "detail_html": plugin.detail_html or "",
+        "website": plugin.website or "",
+        "icon": plugin.icon or "",
+        "category": plugin.category or "",
+        "download_url": plugin.download_url or "",
+        "status": plugin.status,
+    }
+
+
+@router.put("/plugins/{plugin_id}")
+async def edit_plugin(
+    plugin_id: str,
+    file: Optional[UploadFile] = File(None),
+    meta: str = Form(...),
+    admin: StoreUser = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    编辑插件信息（可选上传 ZIP 更新包）
+
+    前端通过 FormData 发送：
+    - meta: JSON 字符串，包含要更新的字段
+    - file: (可选) 新的 ZIP 文件
+    """
+    import tempfile
+
+    ## 查找插件
+    result = await db.execute(
+        select(StorePlugin).where(StorePlugin.plugin_id == plugin_id)
+    )
+    plugin = result.scalar_one_or_none()
+    if not plugin:
+        raise HTTPException(status_code=404, detail="插件不存在")
+
+    ## 解析元数据
+    try:
+        meta_data = json.loads(meta)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="元数据格式错误")
+
+    ## 更新文本字段
+    if "name" in meta_data:
+        plugin.name = meta_data["name"]
+    if "type" in meta_data:
+        plugin.type = meta_data["type"]
+    if "version" in meta_data:
+        plugin.version = meta_data["version"]
+    if "price" in meta_data:
+        plugin.price = Decimal(str(meta_data["price"]))
+        plugin.is_free = plugin.price == 0
+    if "author_name" in meta_data:
+        plugin.author_name = meta_data["author_name"]
+    if "description" in meta_data:
+        plugin.description = meta_data["description"]
+    if "detail_html" in meta_data:
+        plugin.detail_html = meta_data["detail_html"]
+    if "website" in meta_data:
+        plugin.website = meta_data["website"]
+    if "icon" in meta_data:
+        plugin.icon = meta_data["icon"]
+    if "category" in meta_data:
+        plugin.category = meta_data["category"]
+    if "is_official" in meta_data:
+        plugin.is_official = meta_data["is_official"]
+
+    ## 如果有新的 ZIP 文件，处理上传
+    if file and file.filename:
+        if not file.filename.endswith(".zip"):
+            raise HTTPException(status_code=400, detail="只支持 ZIP 格式")
+
+        raw_content = await file.read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_raw:
+            tmp_raw.write(raw_content)
+            tmp_raw_path = tmp_raw.name
+
+        try:
+            version = meta_data.get("version", plugin.version)
+            plugin_dir = os.path.join(UPLOAD_DIR, plugin_id)
+            os.makedirs(plugin_dir, exist_ok=True)
+            file_path = os.path.join(plugin_dir, f"{plugin_id}_v{version}.zip")
+            normalize_zip(tmp_raw_path, plugin_id, file_path)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            try:
+                os.unlink(tmp_raw_path)
+            except OSError:
+                pass
+
+        plugin.download_url = f"/uploads/plugins/{plugin_id}/{os.path.basename(file_path)}"
+
+    plugin.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    return {
+        "message": f"插件 '{plugin.name}' 已更新",
+        "plugin_id": plugin_id,
+        "download_url": plugin.download_url,
+    }
+
+
 class UpdatePluginStatusRequest(BaseModel):
     status: int  ## 0=下架 1=上架 2=审核中
 

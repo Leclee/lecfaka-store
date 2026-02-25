@@ -1027,9 +1027,128 @@ async function submitNewPlugin(e) {
     }
 }
 
-/** 编辑插件(简化版) */
-function editPlugin(pluginId) {
-    showToast('编辑功能开发中...', 'info');
+/** 编辑插件 — 加载数据 → 弹出编辑表单 */
+async function editPlugin(pluginId) {
+    const area = document.getElementById('addPluginArea');
+    area.style.display = 'block';
+    area.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+    try {
+        const p = await apiFetch(`/admin/plugins/${pluginId}`);
+        const inputStyle = 'width:100%;padding:10px 14px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);font-size:14px';
+
+        area.innerHTML = `
+            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:24px">
+                <h4 style="margin-bottom:16px">编辑插件: ${escapeHtml(p.name)}</h4>
+                <form id="editPluginForm" onsubmit="submitEditPlugin(event, '${escapeHtml(pluginId)}')">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                        <div class="form-group">
+                            <label>插件名称 *</label>
+                            <input type="text" id="ep_name" value="${escapeHtml(p.name)}" required style="${inputStyle}">
+                        </div>
+                        <div class="form-group">
+                            <label>类型</label>
+                            <select id="ep_type" style="${inputStyle}">
+                                <option value="theme" ${p.type === 'theme' ? 'selected' : ''}>主题模板</option>
+                                <option value="payment" ${p.type === 'payment' ? 'selected' : ''}>支付接口</option>
+                                <option value="notify" ${p.type === 'notify' ? 'selected' : ''}>通知插件</option>
+                                <option value="delivery" ${p.type === 'delivery' ? 'selected' : ''}>发货插件</option>
+                                <option value="extension" ${p.type === 'extension' ? 'selected' : ''}>功能扩展</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>版本 *</label>
+                            <input type="text" id="ep_version" value="${escapeHtml(p.version)}" required style="${inputStyle}">
+                        </div>
+                        <div class="form-group">
+                            <label>价格 (¥)</label>
+                            <input type="number" id="ep_price" value="${p.price}" min="0" step="0.01" style="${inputStyle}">
+                        </div>
+                        <div class="form-group">
+                            <label>作者</label>
+                            <input type="text" id="ep_author" value="${escapeHtml(p.author_name || '')}" style="${inputStyle}">
+                        </div>
+                        <div class="form-group">
+                            <label>分类</label>
+                            <input type="text" id="ep_category" value="${escapeHtml(p.category || '')}" placeholder="theme / payment / extension" style="${inputStyle}">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:16px">
+                        <label>简介</label>
+                        <input type="text" id="ep_desc" value="${escapeHtml(p.description || '')}" style="${inputStyle}">
+                    </div>
+                    <div class="form-group" style="margin-top:16px">
+                        <label>官网 URL</label>
+                        <input type="url" id="ep_website" value="${escapeHtml(p.website || '')}" style="${inputStyle}">
+                    </div>
+                    <div class="form-group" style="margin-top:16px">
+                        <label>详细描述 (HTML)</label>
+                        <textarea id="ep_detail" rows="4" style="${inputStyle};resize:vertical">${escapeHtml(p.detail_html || '')}</textarea>
+                    </div>
+                    <div class="form-group" style="margin-top:16px">
+                        <label>插件下载包 (ZIP) ${p.download_url ? '<span style="color:var(--color-text-muted);font-size:12px">— 当前: ' + escapeHtml(p.download_url) + '</span>' : '<span style="color:#ff4d4f;font-size:12px">— ⚠️ 尚未上传</span>'}</label>
+                        <input type="file" id="ep_file" accept=".zip" style="padding:10px 0;color:var(--color-text);font-size:14px">
+                    </div>
+                    <div style="display:flex;gap:12px;margin-top:20px">
+                        <button type="submit" class="btn btn-primary" id="epSubmitBtn">保存修改</button>
+                        <button type="button" class="btn btn-outline" onclick="document.getElementById('addPluginArea').style.display='none'">取消</button>
+                    </div>
+                </form>
+            </div>
+        `;
+    } catch (err) {
+        area.innerHTML = `<div class="empty-state"><p>加载失败：${escapeHtml(err.message)}</p></div>`;
+    }
+}
+
+/** 提交编辑 */
+async function submitEditPlugin(e, pluginId) {
+    e.preventDefault();
+    const btn = document.getElementById('epSubmitBtn');
+    btn.textContent = '保存中...';
+    btn.disabled = true;
+
+    try {
+        const price = parseFloat(document.getElementById('ep_price').value) || 0;
+        const body = {
+            name: document.getElementById('ep_name').value.trim(),
+            type: document.getElementById('ep_type').value,
+            version: document.getElementById('ep_version').value.trim(),
+            price: price,
+            is_free: price === 0,
+            author_name: document.getElementById('ep_author').value.trim(),
+            description: document.getElementById('ep_desc').value.trim(),
+            website: document.getElementById('ep_website').value.trim(),
+            detail_html: document.getElementById('ep_detail').value.trim(),
+            category: document.getElementById('ep_category').value.trim(),
+        };
+
+        const fd = new FormData();
+        fd.append('meta', JSON.stringify(body));
+
+        const fileInput = document.getElementById('ep_file');
+        if (fileInput.files.length > 0) {
+            fd.append('file', fileInput.files[0]);
+        }
+
+        const res = await fetch(`${API_BASE}/admin/plugins/${pluginId}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '更新失败');
+
+        showToast(data.message || '插件已更新', 'success');
+        document.getElementById('addPluginArea').style.display = 'none';
+        loadAdminPlugins(document.getElementById('dashboardMain'));
+        await loadPlugins();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.textContent = '保存修改';
+        btn.disabled = false;
+    }
 }
 
 /** 用户管理 */

@@ -514,3 +514,62 @@ def _version_gt(a: str, b: str) -> bool:
         return [int(x) for x in a.split(".")] > [int(x) for x in b.split(".")]
     except (ValueError, AttributeError):
         return False
+
+
+# ==================== 授权验证（供主站安装后自动调用） ====================
+
+class VerifyByTokenRequest(BaseModel):
+    """通过 Store JWT token 验证购买状态并绑定域名"""
+    plugin_id: str
+    domain: str
+
+
+@router.post("/verify-by-token")
+async def verify_by_token(
+    req: VerifyByTokenRequest,
+    user: StoreUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    通过 Store 用户 token 验证是否购买了该插件，并自动绑定域名。
+
+    主站在安装完成后自动调用此接口，完成授权激活。
+    """
+    ## 1. 查询购买记录
+    result = await db.execute(
+        select(UserPlugin).where(
+            UserPlugin.user_id == user.id,
+            UserPlugin.plugin_id == req.plugin_id,
+            UserPlugin.status == 1,
+        )
+    )
+    up = result.scalar_one_or_none()
+
+    if not up:
+        return {"valid": False, "error": "用户未购买此插件"}
+
+    ## 2. 检查过期
+    if up.expires_at and up.expires_at < datetime.utcnow():
+        return {"valid": False, "error": "授权已过期"}
+
+    ## 3. 自动绑定域名
+    if not up.bound_domain:
+        up.bound_domain = req.domain
+        _append_history(up, "auto_bind", req.domain)
+        await db.commit()
+    elif up.bound_domain != req.domain:
+        return {
+            "valid": False,
+            "error": f"插件已绑定到 {up.bound_domain}，当前域名 {req.domain} 不匹配",
+            "bound_domain": up.bound_domain,
+        }
+
+    return {
+        "valid": True,
+        "plugin_id": req.plugin_id,
+        "domain": req.domain,
+        "user_id": user.id,
+        "bound_domain": up.bound_domain,
+        "purchased_at": up.purchased_at.isoformat() if up.purchased_at else None,
+        "expires_at": up.expires_at.isoformat() if up.expires_at else None,
+    }

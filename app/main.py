@@ -75,13 +75,15 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Global unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"detail": f"服务器内部错误: {str(exc)}"}
+        content={"detail": f"服务器内部错误: {str(exc)}" if settings.debug else "服务器内部错误"}
     )
 
+## CORS 配置
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] if settings.cors_origins != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=True if settings.cors_origins != "*" else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -100,10 +102,11 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-## 插件上传文件目录（供下载用）
+## 插件上传文件目录（仅供 download API 内部读取，禁止直接暴露）
 uploads_dir = Path(__file__).parent.parent / "uploads"
 uploads_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+## ⚠️ 不再挂载 /uploads 为 StaticFiles！所有插件包必须通过
+## /api/v1/store/download/{plugin_id} 接口下载（有 JWT 鉴权）
 
 
 @app.get("/health")

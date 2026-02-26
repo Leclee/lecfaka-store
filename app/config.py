@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     secret_key: str = ""  ## 留空 → 首次启动自动生成
     debug: bool = True
 
+    ## CORS 白名单（逗号分隔，如: https://shop.leclee.top）
+    cors_origins: str = "*"
+
     ## JWT 配置
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24  ## 1天

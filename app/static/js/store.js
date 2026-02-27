@@ -644,7 +644,7 @@ async function loadMyPlugins(container) {
             <table class="dash-table">
                 <thead><tr><th>插件</th><th>状态</th><th>绑定域名</th><th>换绑剩余</th><th>购买日期</th></tr></thead>
                 <tbody>${data.items.map(p => `
-                    <tr>
+                    <tr style="cursor:pointer" onclick="showPluginDetail('${escapeHtml(p.id)}')" title="点击查看详情">
                         <td><strong>${p.name}</strong><br><span style="font-size:12px;color:var(--color-text-muted)">v${p.version}</span></td>
                         <td><span class="plugin-tag tag-purchased">${p.status_text}</span></td>
                         <td>${p.bound_domain || '<span style="color:var(--color-text-muted)">未绑定</span>'}</td>

@@ -173,7 +173,7 @@ async def author_upload_plugin(
         existing_plugin.download_url = download_url
         existing_plugin.price = price
         existing_plugin.is_free = is_free
-        existing_plugin.updated_at = datetime.utcnow()
+        existing_plugin.updated_at = datetime.now(timezone.utc)
         ## 更新后重新进入审核
         existing_plugin.status = 2
         msg = f"插件 '{name}' 已更新，等待审核"
@@ -268,7 +268,7 @@ async def author_update_plugin_version(
     ## 4. 更新数据库
     plugin.version = version
     plugin.download_url = f"/uploads/plugins/{plugin_id}/{os.path.basename(final_path)}"
-    plugin.updated_at = datetime.utcnow()
+    plugin.updated_at = datetime.now(timezone.utc)
     plugin.status = 2  ## 更新后重新审核
 
     await db.commit()

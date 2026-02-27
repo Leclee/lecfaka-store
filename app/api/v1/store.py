@@ -307,7 +307,7 @@ async def purchase_plugin(
             pass
 
     ## 4. 免费插件 / 未配置支付时 → 直接创建购买记录
-    order_no = f"ORD-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+    order_no = f"ORD-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
     up = UserPlugin(
         user_id=user.id,
         plugin_id=req.plugin_id,
@@ -316,7 +316,7 @@ async def purchase_plugin(
         rebind_count=0,
         max_rebinds=3,
         order_no=order_no,
-        purchased_at=datetime.utcnow(),
+        purchased_at=datetime.now(timezone.utc),
     )
     db.add(up)
 
@@ -505,7 +505,7 @@ def _append_history(up: UserPlugin, action: str, domain: str):
         history = json.loads(up.rebind_history) if up.rebind_history else []
     except (json.JSONDecodeError, TypeError):
         history = []
-    history.append({"action": action, "domain": domain, "time": datetime.utcnow().isoformat()})
+    history.append({"action": action, "domain": domain, "time": datetime.now(timezone.utc).isoformat()})
     up.rebind_history = json.dumps(history, ensure_ascii=False)
 
 
@@ -549,7 +549,7 @@ async def verify_by_token(
         return {"valid": False, "error": "用户未购买此插件"}
 
     ## 2. 检查过期
-    if up.expires_at and up.expires_at < datetime.utcnow():
+    if up.expires_at and up.expires_at < datetime.now(timezone.utc):
         return {"valid": False, "error": "授权已过期"}
 
     ## 3. 自动绑定域名

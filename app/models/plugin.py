@@ -8,6 +8,42 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 
+# ==================== 配置 ====================
+
+class SystemConfig(Base):
+    """Store 系统配置"""
+    __tablename__ = "store_configs"
+    
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    @classmethod
+    async def get_value(cls, db, key: str, default=None) -> str:
+        from sqlalchemy import select
+        res = await db.execute(select(cls.value).where(cls.key == key))
+        val = res.scalar_one_or_none()
+        return val if val is not None else default
+
+    @classmethod
+    async def set_value(cls, db, key: str, value: str, description: str = None):
+        """插入或更新配置"""
+        from sqlalchemy import select
+        res = await db.execute(select(cls).where(cls.key == key))
+        obj = res.scalar_one_or_none()
+        if obj:
+            obj.value = value
+            if description is not None:
+                obj.description = description
+        else:
+            obj = cls(key=key, value=value, description=description)
+            db.add(obj)
+        await db.flush()
+
+
 # ==================== 用户 ====================
 
 class StoreUser(Base):
@@ -21,7 +57,7 @@ class StoreUser(Base):
     avatar: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user")  ## superadmin / author / user
     status: Mapped[int] = mapped_column(Integer, default=1)  ## 0=禁用 1=正常
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     ## 财务统计
@@ -49,7 +85,7 @@ class WithdrawalRecord(Base):
     account_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     reject_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     ## 关联
@@ -85,7 +121,7 @@ class StorePlugin(Base):
     status: Mapped[int] = mapped_column(Integer, default=1)  ## 0=下架 1=上架 2=审核中
     download_count: Mapped[int] = mapped_column(Integer, default=0)
     purchase_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     ## 注意：与 UserPlugin 的关联通过 plugin_id 字符串匹配，不是 ForeignKey
@@ -114,7 +150,7 @@ class UserPlugin(Base):
     max_rebinds: Mapped[int] = mapped_column(Integer, default=3)
     rebind_history: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  ## JSON
     order_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    purchased_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    purchased_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     ## 关联
@@ -159,7 +195,7 @@ class PaymentOrder(Base):
     payment_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)  ## 支付链接
 
     ## 时间戳
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     expired_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

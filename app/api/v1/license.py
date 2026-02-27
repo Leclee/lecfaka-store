@@ -49,7 +49,7 @@ async def verify_domain(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
         return {"valid": False, "error": "未找到授权或域名未绑定"}
 
     ## 检查是否过期
-    if up.expires_at and up.expires_at < datetime.utcnow():
+    if up.expires_at and up.expires_at < datetime.now(timezone.utc):
         return {"valid": False, "error": "授权已过期"}
 
     return {
@@ -83,7 +83,7 @@ async def verify_by_user(req: VerifyByUserRequest, db: AsyncSession = Depends(ge
         return {"valid": False, "error": "用户未购买此插件"}
 
     ## 检查过期
-    if up.expires_at and up.expires_at < datetime.utcnow():
+    if up.expires_at and up.expires_at < datetime.now(timezone.utc):
         return {"valid": False, "error": "授权已过期"}
 
     ## 自动绑定域名（首次访问时）

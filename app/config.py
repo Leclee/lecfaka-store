@@ -58,20 +58,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-## SECRET_KEY 自动生成：为空时生成随机密钥并写入 .env
-if not settings.secret_key:
-    import secrets as _secrets
-    import os as _os
-    import logging as _log
-
-    _generated_key = _secrets.token_urlsafe(32)
-    settings.secret_key = _generated_key
-
-    ## 追加到 .env 文件
-    _env_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), ".env")
-    try:
-        with open(_env_path, "a", encoding="utf-8") as _f:
-            _f.write(f"\n## 自动生成的 JWT 签名密钥（请勿删除）\nSECRET_KEY={_generated_key}\n")
-        _log.info(f"[config] SECRET_KEY 已自动生成并写入 {_env_path}")
-    except Exception as _e:
-        _log.warning(f"[config] SECRET_KEY 已自动生成但无法写入 .env: {_e}（本次运行有效，重启后会重新生成）")
+## SECRET_KEY 自动生成：将在 main.py 启动时通过数据库 system_configs 表加载

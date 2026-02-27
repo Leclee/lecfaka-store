@@ -5,7 +5,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
@@ -15,26 +15,25 @@ from ..config import settings
 from ..database import get_db
 from ..models.plugin import StoreUser
 
-## 密码哈希
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 ## JWT Bearer
 security = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    """哈希密码"""
-    return pwd_context.hash(password)
+    """哈希密码（bcrypt）"""
+    pwd_bytes = password.encode("utf-8")[:72]  ## bcrypt 72字节限制
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """验证密码"""
-    return pwd_context.verify(plain, hashed)
+    pwd_bytes = plain.encode("utf-8")[:72]
+    return bcrypt.checkpw(pwd_bytes, hashed.encode("utf-8"))
 
 
 def create_access_token(user_id: int, role: str, expires_delta: Optional[timedelta] = None) -> str:
     """创建 JWT access token"""
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
     payload = {
         "sub": str(user_id),
         "role": role,
@@ -46,7 +45,7 @@ def create_access_token(user_id: int, role: str, expires_delta: Optional[timedel
 
 def create_refresh_token(user_id: int) -> str:
     """创建 JWT refresh token"""
-    expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_token_expire_days)
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_token_expire_days)
     payload = {
         "sub": str(user_id),
         "exp": expire,

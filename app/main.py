@@ -53,10 +53,26 @@ def _init_payment_gateways():
     #     payment_manager.register(AlipayGateway(...))
 
 
+async def _init_secret_keys():
+    from .database import async_session_maker
+    import secrets
+    from .models.plugin import SystemConfig
+    
+    async with async_session_maker() as db:
+        sk = await SystemConfig.get_value(db, "secret_key")
+        if not sk:
+            sk = secrets.token_urlsafe(32)
+            await SystemConfig.set_value(db, "secret_key", sk, "Store JWT签名密钥")
+        
+        settings.secret_key = sk
+        logger.info("[OK] Secret key loaded from database")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("[OK] Store database tables ready")
+    await _init_secret_keys()
     _init_payment_gateways()
     yield
 
@@ -139,9 +155,9 @@ async def serve_spa(path: str, request: Request):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
-    ## 尝试返回静态文件
-    file_path = static_dir / path
-    if file_path.is_file():
+    ## 尝试返回静态文件（检查路径遍历）
+    file_path = (static_dir / path).resolve()
+    if file_path.is_file() and str(file_path).startswith(str(static_dir.resolve())):
         return FileResponse(str(file_path))
 
     ## 兜底返回 index.html

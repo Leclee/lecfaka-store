@@ -364,7 +364,7 @@ async function showPluginDetail(pluginId) {
                 </div>
             </div>
             <div class="detail-actions">${actionBtn}</div>
-            <div class="detail-body">${p.detail_html || p.description || '暂无详细描述'}</div>
+            <div class="detail-body">${typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(p.detail_html || p.description || '暂无详细描述') : escapeHtml(p.detail_html || p.description || '暂无详细描述')}</div>
         `;
     } catch (err) {
         detail.innerHTML = `<div class="empty-state"><p>加载失败：${err.message}</p></div>`;
